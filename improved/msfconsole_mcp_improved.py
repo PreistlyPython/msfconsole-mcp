@@ -79,7 +79,7 @@ except ImportError:
     sys.exit(1)
 
 # Define version
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 # Initialize FastMCP server
 try:
@@ -97,72 +97,9 @@ msf_executor = MSFConsoleExecutor(
 )
 
 # Create a SafeContext wrapper class for better compatibility
-class SafeContext:
-    """
-    Wrapper for MCP context that handles different context interfaces
-    and provides fallback for missing methods.
-    """
-    def __init__(self, ctx):
-        self.ctx = ctx
-    
-    async def info(self, message):
-        """Send info message"""
-        if self.ctx is None:
-            logger.info(message)
-            return
-        
-        if hasattr(self.ctx, 'info'):
-            await self.ctx.info(message)
-        elif hasattr(self.ctx, 'send_info'):
-            await self.ctx.send_info(message)
-        else:
-            logger.info(message)
-    
-    async def error(self, message):
-        """Send error message"""
-        if self.ctx is None:
-            logger.error(message)
-            return
-        
-        if hasattr(self.ctx, 'error'):
-            await self.ctx.error(message)
-        elif hasattr(self.ctx, 'send_error'):
-            await self.ctx.send_error(message)
-        else:
-            logger.error(message)
-    
-    async def warning(self, message):
-        """Send warning message"""
-        if self.ctx is None:
-            logger.warning(message)
-            return
-        
-        if hasattr(self.ctx, 'warning'):
-            await self.ctx.warning(message)
-        elif hasattr(self.ctx, 'send_warning'):
-            await self.ctx.send_warning(message)
-        else:
-            logger.warning(message)
-    
-    async def progress(self, message, percentage):
-        """Send progress update"""
-        if self.ctx is None:
-            logger.info(f"Progress {percentage}%: {message}")
-            return
-        
-        if hasattr(self.ctx, 'progress'):
-            await self.ctx.progress(message, percentage)
-        elif hasattr(self.ctx, 'report_progress'):
-            await self.ctx.report_progress(percentage, 100, message)
-        else:
-            logger.info(f"Progress {percentage}%: {message}")
-    
-    async def report_progress(self, current, total, message):
-        """Report progress with current/total values"""
-        percentage = int((current / total) * 100) if total > 0 else 0
-        await self.progress(message, percentage)
+# Import our improved SafeContext
+from safe_context import SafeContext
 
-# Helper function to check if Metasploit is installed and database is ready
 async def check_metasploit_ready(ctx: Optional[Context] = None) -> bool:
     """
     Check if Metasploit is installed and the database is ready

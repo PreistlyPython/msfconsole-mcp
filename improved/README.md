@@ -1,96 +1,64 @@
-# Improved Metasploit Framework Console MCP
+# Improved MSFConsole MCP
 
-An enhanced and more reliable Metasploit Framework integration for MCP (Model, Controller, Processor) that allows AI assistants to interact with Metasploit through a structured API.
-
-## Key Improvements
-
-- Robust database initialization and connection handling
-- More reliable command execution using resource scripts
-- Better error handling and timeout management
-- Enhanced progress reporting
-- Improved parsing of command outputs
-- Comprehensive documentation
-- Automatic cleanup of temporary files
+This is an enhanced version of the Metasploit Framework Console Model Context Protocol (MCP) integration. The improved version provides better error handling, compatibility with different MCP SDK versions, and a more robust architecture.
 
 ## Features
 
-- Execute msfconsole commands with improved reliability
-- Search for Metasploit modules
-- Manage workspaces with proper database checks
-- Run scans against target hosts
-- Manage database operations with structured data output
-- Generate payloads with msfvenom
-- Manage and interact with sessions
-- Access detailed module information
-- Browse built-in documentation
+- **Robust Command Execution**: Uses resource scripts for reliable MSF command execution
+- **Progress Reporting**: Comprehensive progress tracking during long operations
+- **Error Handling**: Detailed error information with graceful degradation
+- **MCP Compatibility**: Works with different versions of the MCP SDK
 
-## Prerequisites
+## Recent Improvements
 
-- Python 3.8+
-- Metasploit Framework
-- MCP SDK
-- PostgreSQL (for Metasploit database)
+- Fixed compatibility issues with different MCP Context APIs
+- Enhanced progress reporting with dynamic signature detection
+- Separated SafeContext into its own module for better maintainability
+- Added comprehensive test suite for verifying compatibility
 
-## Installation
+## Project Structure
 
-1. Make sure the parent directory has a Python virtual environment:
-```bash
-cd ..
-./fix_python_version.sh  # If needed to set up a compatible environment
-```
-
-2. Run the installation script:
-```bash
-pip install -r requirements.txt
-```
+- `msfconsole_mcp_improved.py`: Main MCP server implementation
+- `msf_execution.py`: Core class for executing Metasploit commands
+- `safe_context.py`: Compatibility layer for different MCP Context APIs
+- `config.py`: Configuration settings for the MCP
+- `test_safe_context.py`: Test suite for the SafeContext module
+- Various shell scripts for environment setup and server launching
 
 ## Usage
 
-1. Start the MCP server with database initialization:
+1. Ensure Metasploit Framework is installed and the database is initialized
+2. Run the launch script to start the MCP server:
+
 ```bash
 ./launch_msfconsole_mcp_improved.sh
 ```
 
+3. The MCP tools will be available through the Claude Desktop interface
+
 ## Available Tools
 
-This MCP provides the following tools:
+- `get_msf_version`: Retrieve Metasploit Framework version
+- `run_msf_command`: Execute arbitrary MSF commands
+- `search_modules`: Search for Metasploit modules
+- `manage_workspaces`: Manage MSF workspaces
+- `run_scan`: Execute different types of scans
+- `manage_database`: Perform database operations
+- `manage_sessions`: List and manage active sessions
+- `generate_payload`: Generate payloads using msfvenom
+- `show_module_info`: Get detailed information about modules
+- `browse_documentation`: Access MSF documentation
 
-- `get_msf_version`: Get the installed Metasploit Framework version
-- `run_msf_command`: Execute a command in msfconsole
-- `search_modules`: Search for modules in the Metasploit Framework
-- `manage_workspaces`: List and manage Metasploit workspaces
-- `run_scan`: Run a scan against target hosts
-- `manage_database`: Manage the Metasploit database
-- `manage_sessions`: List and manage Metasploit sessions
-- `generate_payload`: Generate a payload using msfvenom
-- `show_module_info`: Show detailed information about a Metasploit module
-- `browse_documentation`: Access built-in documentation on Metasploit usage
+## Testing
 
-## Architecture
+To test the SafeContext implementation:
 
-This improved MCP uses a more reliable execution strategy:
+```bash
+python test_safe_context.py
+```
 
-1. **Database Initialization**: The launch script ensures the Metasploit database is properly initialized before starting the MCP.
+This will verify that the SafeContext correctly handles different MCP Context APIs.
 
-2. **Resource Script Execution**: Instead of maintaining a long-running msfconsole process, each command is executed in a separate process using resource scripts. This prevents hanging and provides more reliable timeout handling.
+## Changelog
 
-3. **SafeContext Wrapper**: A compatibility layer that ensures consistent progress reporting regardless of the MCP context implementation.
-
-4. **Enhanced Output Parsing**: Better parsing of command outputs to provide structured data where available.
-
-## Troubleshooting
-
-If you encounter issues:
-
-1. Check the logs in the `logs` directory
-2. Ensure PostgreSQL is running: `systemctl status postgresql`
-3. Try manually initializing the Metasploit database: `msfdb init`
-4. Verify Metasploit can run standalone: `msfconsole -q -x "version; exit"`
-
-## License
-
-This project is licensed under the MIT License.
-
-## Disclaimer
-
-This tool is designed for legal security testing only. Always ensure you have permission before testing any system, and follow all applicable laws and regulations.
+See [CHANGELOG.md](./CHANGELOG.md) for a history of changes to this project.
