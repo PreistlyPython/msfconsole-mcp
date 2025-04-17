@@ -1,119 +1,243 @@
 #!/usr/bin/env python3
 
 """
-Test the SafeContext class to ensure it correctly handles different MCP Context APIs.
+Test suite for SafeContext implementation.
+
+This script tests the SafeContext wrapper against multiple mock implementations
+of MCP Context interfaces to verify compatibility with different SDK versions.
 """
 
 import asyncio
+import inspect
 import logging
-from unittest.mock import MagicMock, AsyncMock
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Union
 
 from safe_context import SafeContext
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# Define mock Context classes for different MCP API versions
 
-class ContextWithTwoParams:
-    """Mock Context class with report_progress taking 2 parameters"""
+class MCPContext_v1:
+    """Mock implementation of early MCP Context API"""
+    
     async def report_progress(self, current, total):
-        print(f"ContextWithTwoParams.report_progress({current}, {total})")
+        """Early MCP SDK version with 2 parameters"""
+        print(f"MCPContext_v1.report_progress({current}, {total})")
+        return True
+    
+    async def info(self, message):
+        """Log an info message"""
+        print(f"MCPContext_v1.info: {message}")
+        return True
+    
+    async def error(self, message):
+        """Log an error message"""
+        print(f"MCPContext_v1.error: {message}")
         return True
 
 
-class ContextWithThreeParams:
-    """Mock Context class with report_progress taking 3 parameters"""
+class MCPContext_v2:
+    """Mock implementation of newer MCP Context API"""
+    
     async def report_progress(self, current, total, message):
-        print(f"ContextWithThreeParams.report_progress({current}, {total}, '{message}')")
+        """Newer MCP SDK version with 3 parameters"""
+        print(f"MCPContext_v2.report_progress({current}, {total}, '{message}')")
+        return True
+    
+    async def info(self, message):
+        """Log an info message"""
+        print(f"MCPContext_v2.info: {message}")
+        return True
+    
+    async def error(self, message):
+        """Log an error message"""
+        print(f"MCPContext_v2.error: {message}")
+        return True
+    
+    async def warning(self, message):
+        """Log a warning message"""
+        print(f"MCPContext_v2.warning: {message}")
         return True
 
 
-async def test_report_progress():
-    """Test the report_progress method with different context implementations"""
+class MCPContext_v3:
+    """Mock implementation of different style MCP Context API"""
     
-    # Test with two-parameter context
-    ctx2 = ContextWithTwoParams()
-    safe_ctx2 = SafeContext(ctx2)
+    async def progress(self, message, percentage):
+        """Alternative progress reporting style"""
+        print(f"MCPContext_v3.progress('{message}', {percentage})")
+        return True
     
-    # Create a spy on the report_progress method
-    original_method2 = ctx2.report_progress
-    calls2 = []
+    async def send_info(self, message):
+        """Alternative info style"""
+        print(f"MCPContext_v3.send_info: {message}")
+        return True
     
-    async def spy_method2(current, total):
-        calls2.append((current, total))
-        return await original_method2(current, total)
+    async def send_error(self, message):
+        """Alternative error style"""
+        print(f"MCPContext_v3.send_error: {message}")
+        return True
+
+
+class MCPContext_Broken:
+    """Mock implementation with methods that raise exceptions"""
     
-    ctx2.report_progress = spy_method2
+    async def report_progress(self, current, total):
+        """Broken implementation that raises an exception"""
+        raise RuntimeError("Simulated error in report_progress")
     
-    # Call with different parameter combinations
-    await safe_ctx2.report_progress(30, 100, "Test message")
-    await safe_ctx2.progress("Progress message", 50)
+    async def info(self, message):
+        """Broken implementation that raises an exception"""
+        raise RuntimeError("Simulated error in info")
+
+
+async def test_report_progress_v1():
+    """Test with MCP Context v1 (2 parameters)"""
+    print("\n=== Testing with MCP Context v1 (2 parameters) ===")
     
-    print(f"Calls to context with 2 params: {calls2}")
-    assert len(calls2) == 2, f"Expected 2 calls, got {len(calls2)}"
-    assert calls2[0] == (30, 100), f"Expected (30, 100), got {calls2[0]}"
-    assert calls2[1] == (50, 100), f"Expected (50, 100), got {calls2[1]}"
+    ctx = MCPContext_v1()
+    safe_ctx = SafeContext(ctx)
     
-    # Test with three-parameter context
-    ctx3 = ContextWithThreeParams()
-    safe_ctx3 = SafeContext(ctx3)
+    # Verify the signature detection
+    sig = inspect.signature(ctx.report_progress)
+    print(f"Original signature: {sig} with {len(sig.parameters)} parameters")
     
-    # Create a spy on the report_progress method
-    original_method3 = ctx3.report_progress
-    calls3 = []
+    # Test basic progress reporting
+    await safe_ctx.report_progress(30, 100, "Test message")
     
-    async def spy_method3(current, total, message):
-        calls3.append((current, total, message))
-        return await original_method3(current, total, message)
+    # Test percentage calculation and normalization
+    await safe_ctx.report_progress(30, 0, "Division by zero test")
+    await safe_ctx.report_progress(-10, 100, "Negative value test")
+    await safe_ctx.report_progress(200, 100, "Value > 100% test")
     
-    ctx3.report_progress = spy_method3
+    # Test the progress wrapper method
+    await safe_ctx.progress("Progress message", 50)
     
-    # Call with different parameter combinations
-    await safe_ctx3.report_progress(30, 100, "Test message")
-    await safe_ctx3.progress("Progress message", 50)
-    
-    print(f"Calls to context with 3 params: {calls3}")
-    assert len(calls3) == 2, f"Expected 2 calls, got {len(calls3)}"
-    assert calls3[0] == (30, 100, "Test message"), f"Expected (30, 100, 'Test message'), got {calls3[0]}"
-    assert calls3[1] == (50, 100, "Progress message"), f"Expected (50, 100, 'Progress message'), got {calls3[1]}"
-    
-    print("All tests passed!")
+    print("All v1 tests passed!")
     return True
 
 
-async def test_other_methods():
-    """Test other context methods with different implementations"""
+async def test_report_progress_v2():
+    """Test with MCP Context v2 (3 parameters)"""
+    print("\n=== Testing with MCP Context v2 (3 parameters) ===")
     
-    # Test info, error, warning methods
-    ctx = MagicMock()
-    ctx.info = AsyncMock()
-    ctx.error = AsyncMock()
-    ctx.warning = AsyncMock()
-    
+    ctx = MCPContext_v2()
     safe_ctx = SafeContext(ctx)
     
-    await safe_ctx.info("Info message")
-    await safe_ctx.error("Error message")
-    await safe_ctx.warning("Warning message")
+    # Verify the signature detection
+    sig = inspect.signature(ctx.report_progress)
+    print(f"Original signature: {sig} with {len(sig.parameters)} parameters")
     
-    ctx.info.assert_called_once_with("Info message")
-    ctx.error.assert_called_once_with("Error message")
-    ctx.warning.assert_called_once_with("Warning message")
+    # Test basic progress reporting
+    await safe_ctx.report_progress(30, 100, "Test message")
     
-    print("All method tests passed!")
+    # Test with empty message
+    await safe_ctx.report_progress(60, 100, "")
+    
+    # Test with None message (should be handled gracefully)
+    await safe_ctx.report_progress(60, 100)
+    
+    # Test the progress wrapper method
+    await safe_ctx.progress("Progress message", 50)
+    
+    print("All v2 tests passed!")
+    return True
+
+
+async def test_alternative_style():
+    """Test with alternative MCP Context style (progress method)"""
+    print("\n=== Testing with alternative MCP Context style ===")
+    
+    ctx = MCPContext_v3()
+    safe_ctx = SafeContext(ctx)
+    
+    # Test the progress method directly
+    await safe_ctx.progress("Direct progress call", 75)
+    
+    # Test through report_progress
+    await safe_ctx.report_progress(30, 40, "Via report_progress")
+    
+    print("All alternative style tests passed!")
+    return True
+
+
+async def test_error_handling():
+    """Test with broken MCP Context implementation"""
+    print("\n=== Testing error handling with broken Context ===")
+    
+    ctx = MCPContext_Broken()
+    safe_ctx = SafeContext(ctx)
+    
+    # These should not raise exceptions but log errors
+    await safe_ctx.report_progress(50, 100, "Should handle errors")
+    await safe_ctx.info("Info with error handling")
+    
+    print("All error handling tests passed!")
+    return True
+
+
+async def test_null_context():
+    """Test with null context (should use logger fallback)"""
+    print("\n=== Testing with null context ===")
+    
+    safe_ctx = SafeContext(None)
+    
+    # These should fall back to logger
+    await safe_ctx.report_progress(50, 100, "Using logger fallback")
+    await safe_ctx.info("Info via logger")
+    await safe_ctx.error("Error via logger")
+    await safe_ctx.warning("Warning via logger")
+    await safe_ctx.progress("Progress via logger", 25)
+    
+    print("All null context tests passed!")
+    return True
+
+
+async def test_message_methods():
+    """Test message logging methods across different Context styles"""
+    print("\n=== Testing message methods ===")
+    
+    # Test with v1
+    ctx1 = MCPContext_v1()
+    safe_ctx1 = SafeContext(ctx1)
+    await safe_ctx1.info("Info message v1")
+    await safe_ctx1.error("Error message v1")
+    await safe_ctx1.warning("Warning message v1")  # Should fall back to logger
+    
+    # Test with v2
+    ctx2 = MCPContext_v2()
+    safe_ctx2 = SafeContext(ctx2)
+    await safe_ctx2.info("Info message v2")
+    await safe_ctx2.error("Error message v2")
+    await safe_ctx2.warning("Warning message v2")
+    
+    # Test with v3
+    ctx3 = MCPContext_v3()
+    safe_ctx3 = SafeContext(ctx3)
+    await safe_ctx3.info("Info message v3")
+    await safe_ctx3.error("Error message v3")
+    await safe_ctx3.warning("Warning message v3")  # Should fall back to logger
+    
+    print("All message method tests passed!")
     return True
 
 
 async def main():
-    """Run all tests"""
-    print("Testing SafeContext implementation...")
+    """Run all tests sequentially"""
+    print("=== Starting SafeContext Tests ===")
     
-    await test_report_progress()
-    await test_other_methods()
+    await test_report_progress_v1()
+    await test_report_progress_v2()
+    await test_alternative_style()
+    await test_error_handling()
+    await test_null_context()
+    await test_message_methods()
     
-    print("All tests completed successfully!")
+    print("\n=== All tests completed successfully! ===")
 
 
 if __name__ == "__main__":

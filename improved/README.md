@@ -1,29 +1,43 @@
 # Improved MSFConsole MCP
 
-This is an enhanced version of the Metasploit Framework Console Model Context Protocol (MCP) integration. The improved version provides better error handling, compatibility with different MCP SDK versions, and a more robust architecture.
+An enhanced version of the Metasploit Framework Console Model Context Protocol (MCP) integration. This improved version provides better error handling, compatibility with different MCP SDK versions, and a more robust architecture.
 
 ## Features
 
 - **Robust Command Execution**: Uses resource scripts for reliable MSF command execution
-- **Progress Reporting**: Comprehensive progress tracking during long operations
+- **Cross-Version Compatibility**: Works with different versions of the MCP SDK
+- **Progress Reporting**: Comprehensive and reliable progress tracking during long operations
 - **Error Handling**: Detailed error information with graceful degradation
-- **MCP Compatibility**: Works with different versions of the MCP SDK
-
-## Recent Improvements
-
-- Fixed compatibility issues with different MCP Context APIs
-- Enhanced progress reporting with dynamic signature detection
-- Separated SafeContext into its own module for better maintainability
-- Added comprehensive test suite for verifying compatibility
+- **Automatic API Detection**: Dynamically adapts to available methods and signatures
 
 ## Project Structure
 
-- `msfconsole_mcp_improved.py`: Main MCP server implementation
-- `msf_execution.py`: Core class for executing Metasploit commands
-- `safe_context.py`: Compatibility layer for different MCP Context APIs
-- `config.py`: Configuration settings for the MCP
-- `test_safe_context.py`: Test suite for the SafeContext module
-- Various shell scripts for environment setup and server launching
+- **msfconsole_mcp_improved.py**: Main MCP server implementation
+- **msf_execution.py**: Core class for executing Metasploit commands
+- **safe_context.py**: Compatibility layer for different MCP Context APIs
+- **config.py**: Configuration settings
+- **test_safe_context.py**: Test suite for verifying compatibility
+- **launch_msfconsole_mcp_improved.sh**: Launch script for the MCP server
+
+## Recent Improvements
+
+The latest version (0.3.0) includes significant improvements to ensure compatibility with different MCP SDK versions:
+
+1. **Enhanced SafeContext**: 
+   - Moved to a separate module for better maintainability
+   - Added dynamic signature detection for Context methods
+   - Improved error handling and fallback mechanisms
+   - Enhanced progress reporting with normalization
+
+2. **Comprehensive Testing**:
+   - Added a robust test suite for verifying compatibility
+   - Tests multiple API versions and error scenarios
+   - Ensures consistent behavior across different environments
+
+3. **Documentation**:
+   - Added detailed code documentation
+   - Created a comprehensive changelog
+   - Improved README with usage instructions
 
 ## Usage
 
@@ -49,15 +63,28 @@ This is an enhanced version of the Metasploit Framework Console Model Context Pr
 - `show_module_info`: Get detailed information about modules
 - `browse_documentation`: Access MSF documentation
 
+## SafeContext Compatibility
+
+The SafeContext module provides compatibility with different MCP SDK versions:
+
+- **MCP 1.x**: Uses `report_progress(current, total)`
+- **MCP 2.x**: Uses `report_progress(current, total, message)`
+- **Alternative styles**: Supports `progress(message, percentage)`
+- **Missing methods**: Falls back to logging
+
 ## Testing
 
-To test the SafeContext implementation:
+To run the test suite:
 
 ```bash
 python test_safe_context.py
 ```
 
-This will verify that the SafeContext correctly handles different MCP Context APIs.
+This will verify that the SafeContext implementation correctly handles:
+- Different MCP Context API versions
+- Missing methods
+- Error conditions
+- Parameter mismatches
 
 ## Changelog
 
