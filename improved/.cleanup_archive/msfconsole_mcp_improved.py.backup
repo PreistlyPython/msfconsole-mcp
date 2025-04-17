@@ -18,6 +18,27 @@ import shlex
 import shutil
 from typing import List, Dict, Any, Optional, Union
 
+# Process command line arguments
+import argparse
+parser = argparse.ArgumentParser(description="Improved Metasploit MCP Server")
+parser.add_argument("--json-stdout", action="store_true", help="Ensure all stdout is valid JSON")
+parser.add_argument("--strict-mode", action="store_true", help="Run in strict JSON mode")
+parser.add_argument("--debug-to-stderr", action="store_true", help="Redirect debug output to stderr")
+args = parser.parse_args()
+
+# Configure JSON handling
+json_stdout = args.json_stdout or "MCP_STRICT_JSON" in os.environ
+strict_mode = args.strict_mode or "MCP_STRICT_JSON" in os.environ
+debug_to_stderr = args.debug_to_stderr or "MCP_DEBUG_TO_STDERR" in os.environ
+
+# Configure log handlers based on settings
+log_handlers = []
+if debug_to_stderr:
+    log_handlers.append(logging.StreamHandler(sys.stderr))
+else:
+    log_handlers.append(logging.StreamHandler())
+log_handlers.append(logging.FileHandler("msfconsole_mcp_improved.log"))
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
