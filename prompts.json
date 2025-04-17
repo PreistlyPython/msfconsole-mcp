@@ -1,0 +1,29 @@
+{
+  "prompts": [
+    {
+      "title": "Network Reconnaissance",
+      "description": "Basic network reconnaissance workflow",
+      "text": "I need to perform initial reconnaissance on the target network 192.168.1.0/24. Can you help me:\n\n1. Run a ping sweep to identify live hosts\n2. Perform a port scan on the discovered hosts\n3. Identify services running on open ports\n4. Check for any vulnerable services\n5. Present the findings in a structured way"
+    },
+    {
+      "title": "Vulnerability Assessment",
+      "description": "Windows server vulnerability assessment",
+      "text": "I've identified a Windows server at 10.0.0.15 that appears to be running outdated services. Please help me:\n\n1. Search for relevant Windows vulnerabilities in Metasploit\n2. Find exploits related to SMB services and RDP\n3. Check if the target might be vulnerable to EternalBlue (MS17-010)\n4. Identify which exploits have the highest success rates\n5. Recommend the best vulnerability to target first"
+    },
+    {
+      "title": "Exploitation with Meterpreter",
+      "description": "Web server exploitation with reverse shell",
+      "text": "I have permission to exploit a vulnerable web server at 192.168.2.10. The server is running Apache 2.4.49 with a known vulnerability. Please help me:\n\n1. Generate a reverse shell payload for Linux that connects back to my IP (192.168.2.5)\n2. Set up a listener for the incoming connection\n3. Execute the exploit and establish a Meterpreter session\n4. Perform basic post-exploitation steps to gather system information\n5. Establish persistence for later access"
+    },
+    {
+      "title": "Password and Credential Harvesting",
+      "description": "Harvest credentials from a compromised Windows system",
+      "text": "I've established a Meterpreter session on a compromised Windows 10 workstation. Help me harvest credentials by:\n\n1. Dumping stored passwords from memory\n2. Extracting password hashes from the SAM database\n3. Finding stored credentials in common applications\n4. Identifying domain controller information\n5. Suggesting methods to pivot to other systems using the harvested credentials"
+    },
+    {
+      "title": "Reporting and Documentation",
+      "description": "Generate a comprehensive penetration test report",
+      "text": "I've completed a penetration test on the target network 10.10.0.0/24. Help me generate a comprehensive report by:\n\n1. Summarizing the discovered hosts and their services\n2. Listing the vulnerabilities found, categorized by severity\n3. Documenting the successful exploitation paths\n4. Creating a table of recommended mitigations\n5. Providing evidence of access for each compromised system"
+    }
+  ]
+}

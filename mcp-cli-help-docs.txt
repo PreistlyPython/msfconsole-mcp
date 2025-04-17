@@ -1,0 +1,16 @@
+Help on package mcp.cli in mcp:
+
+NAME
+    mcp.cli - FastMCP CLI package.
+
+PACKAGE CONTENTS
+    claude
+    cli
+
+DATA
+    app = <typer.main.Typer object>
+
+FILE
+    /home/dell/anaconda3/lib/python3.10/site-packages/mcp/cli/__init__.py
+
+

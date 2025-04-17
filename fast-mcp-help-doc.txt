@@ -1,0 +1,310 @@
+Help on class ClientSession in module mcp.client.session:
+
+class ClientSession(mcp.shared.session.BaseSession)
+ |  ClientSession(read_stream: anyio.streams.memory.MemoryObjectReceiveStream[mcp.types.JSONRPCMessage | Exception], write_stream: anyio.streams.memory.MemoryObjectSendStream[mcp.types.JSONRPCMessage], read_timeout_seconds: datetime.timedelta | None = None) -> None
+ |  
+ |  Method resolution order:
+ |      ClientSession
+ |      mcp.shared.session.BaseSession
+ |      contextlib.AbstractAsyncContextManager
+ |      abc.ABC
+ |      typing.Generic
+ |      builtins.object
+ |  
+ |  Methods defined here:
+ |  
+ |  __init__(self, read_stream: anyio.streams.memory.MemoryObjectReceiveStream[mcp.types.JSONRPCMessage | Exception], write_stream: anyio.streams.memory.MemoryObjectSendStream[mcp.types.JSONRPCMessage], read_timeout_seconds: datetime.timedelta | None = None) -> None
+ |      Initialize self.  See help(type(self)) for accurate signature.
+ |  
+ |  async call_tool(self, name: str, arguments: dict | None = None) -> mcp.types.CallToolResult
+ |      Send a tools/call request.
+ |  
+ |  async complete(self, ref: mcp.types.ResourceReference | mcp.types.PromptReference, argument: dict) -> mcp.types.CompleteResult
+ |      Send a completion/complete request.
+ |  
+ |  async get_prompt(self, name: str, arguments: dict[str, str] | None = None) -> mcp.types.GetPromptResult
+ |      Send a prompts/get request.
+ |  
+ |  async initialize(self) -> mcp.types.InitializeResult
+ |  
+ |  async list_prompts(self) -> mcp.types.ListPromptsResult
+ |      Send a prompts/list request.
+ |  
+ |  async list_resources(self) -> mcp.types.ListResourcesResult
+ |      Send a resources/list request.
+ |  
+ |  async list_tools(self) -> mcp.types.ListToolsResult
+ |      Send a tools/list request.
+ |  
+ |  async read_resource(self, uri: pydantic.networks.AnyUrl) -> mcp.types.ReadResourceResult
+ |      Send a resources/read request.
+ |  
+ |  async send_ping(self) -> mcp.types.EmptyResult
+ |      Send a ping request.
+ |  
+ |  async send_progress_notification(self, progress_token: str | int, progress: float, total: float | None = None) -> None
+ |      Send a progress notification.
+ |  
+ |  async send_roots_list_changed(self) -> None
+ |      Send a roots/list_changed notification.
+ |  
+ |  async set_logging_level(self, level: Literal['debug', 'info', 'notice', 'warning', 'error', 'critical', 'alert', 'emergency']) -> mcp.types.EmptyResult
+ |      Send a logging/setLevel request.
+ |  
+ |  async subscribe_resource(self, uri: pydantic.networks.AnyUrl) -> mcp.types.EmptyResult
+ |      Send a resources/subscribe request.
+ |  
+ |  async unsubscribe_resource(self, uri: pydantic.networks.AnyUrl) -> mcp.types.EmptyResult
+ |      Send a resources/unsubscribe request.
+ |  
+ |  ----------------------------------------------------------------------
+ |  Data and other attributes defined here:
+ |  
+ |  __abstractmethods__ = frozenset()
+ |  
+ |  __annotations__ = {}
+ |  
+ |  __orig_bases__ = (mcp.shared.session.BaseSession[mcp.types.ClientR...y...
+ |  
+ |  __parameters__ = ()
+ |  
+ |  ----------------------------------------------------------------------
+ |  Methods inherited from mcp.shared.session.BaseSession:
+ |  
+ |  async __aenter__(self)
+ |      Return `self` upon entering the runtime context.
+ |  
+ |  async __aexit__(self, exc_type, exc_val, exc_tb)
+ |      Raise any exception triggered within the runtime context.
+ |  
+ |  async send_notification(self, notification: ~SendNotificationT) -> None
+ |      Emits a notification, which is a one-way message that does not expect
+ |      a response.
+ |  
+ |  async send_request(self, request: ~SendRequestT, result_type: type[~ReceiveResultT]) -> ~ReceiveResultT
+ |      Sends a request and wait for a response. Raises an McpError if the
+ |      response contains an error.
+ |      
+ |      Do not use this method to emit notifications! Use send_notification()
+ |      instead.
+ |  
+ |  ----------------------------------------------------------------------
+ |  Readonly properties inherited from mcp.shared.session.BaseSession:
+ |  
+ |  incoming_messages
+ |  
+ |  ----------------------------------------------------------------------
+ |  Class methods inherited from contextlib.AbstractAsyncContextManager:
+ |  
+ |  __class_getitem__ = GenericAlias(...) from abc.ABCMeta
+ |      Represent a PEP 585 generic type
+ |      
+ |      E.g. for t = list[int], t.__origin__ is list and t.__args__ is (int,).
+ |  
+ |  __subclasshook__(C) from abc.ABCMeta
+ |      Abstract classes can override this to customize issubclass().
+ |      
+ |      This is invoked early on by abc.ABCMeta.__subclasscheck__().
+ |      It should return True, False or NotImplemented.  If it returns
+ |      NotImplemented, the normal algorithm is used.  Otherwise, it
+ |      overrides the normal algorithm (and the outcome is cached).
+ |  
+ |  ----------------------------------------------------------------------
+ |  Data descriptors inherited from contextlib.AbstractAsyncContextManager:
+ |  
+ |  __dict__
+ |      dictionary for instance variables (if defined)
+ |  
+ |  __weakref__
+ |      list of weak references to the object (if defined)
+ |  
+ |  ----------------------------------------------------------------------
+ |  Class methods inherited from typing.Generic:
+ |  
+ |  __init_subclass__(*args, **kwargs) from abc.ABCMeta
+ |      This method is called when a class is subclassed.
+ |      
+ |      The default implementation does nothing. It may be
+ |      overridden to extend subclasses.
+
+Help on class FastMCP in module mcp.server.fastmcp.server:
+
+class FastMCP(builtins.object)
+ |  FastMCP(name: str | None = None, **settings: Any)
+ |  
+ |  Methods defined here:
+ |  
+ |  __init__(self, name: str | None = None, **settings: Any)
+ |      Initialize self.  See help(type(self)) for accurate signature.
+ |  
+ |  add_prompt(self, prompt: mcp.server.fastmcp.prompts.base.Prompt) -> None
+ |      Add a prompt to the server.
+ |      
+ |      Args:
+ |          prompt: A Prompt instance to add
+ |  
+ |  add_resource(self, resource: mcp.server.fastmcp.resources.base.Resource) -> None
+ |      Add a resource to the server.
+ |      
+ |      Args:
+ |          resource: A Resource instance to add
+ |  
+ |  add_tool(self, fn: Callable, name: str | None = None, description: str | None = None) -> None
+ |      Add a tool to the server.
+ |      
+ |      The tool function can optionally request a Context object by adding a parameter
+ |      with the Context type annotation. See the @tool decorator for examples.
+ |      
+ |      Args:
+ |          fn: The function to register as a tool
+ |          name: Optional name for the tool (defaults to function name)
+ |          description: Optional description of what the tool does
+ |  
+ |  async call_tool(self, name: str, arguments: dict) -> Sequence[mcp.types.TextContent | mcp.types.ImageContent | mcp.types.EmbeddedResource]
+ |      Call a tool by name with arguments.
+ |  
+ |  get_context(self) -> 'Context'
+ |      Returns a Context object. Note that the context will only be valid
+ |      during a request; outside a request, most methods will error.
+ |  
+ |  async get_prompt(self, name: str, arguments: dict[str, typing.Any] | None = None) -> mcp.types.GetPromptResult
+ |      Get a prompt by name with arguments.
+ |  
+ |  async list_prompts(self) -> list[mcp.types.Prompt]
+ |      List all available prompts.
+ |  
+ |  async list_resource_templates(self) -> list[mcp.types.ResourceTemplate]
+ |  
+ |  async list_resources(self) -> list[mcp.types.Resource]
+ |      List all available resources.
+ |  
+ |  async list_tools(self) -> list[mcp.types.Tool]
+ |      List all available tools.
+ |  
+ |  prompt(self, name: str | None = None, description: str | None = None) -> Callable
+ |      Decorator to register a prompt.
+ |      
+ |              Args:
+ |                  name: Optional name for the prompt (defaults to function name)
+ |                  description: Optional description of what the prompt does
+ |      
+ |              Example:
+ |                  @server.prompt()
+ |                  def analyze_table(table_name: str) -> list[Message]:
+ |                      schema = read_table_schema(table_name)
+ |                      return [
+ |                          {
+ |                              "role": "user",
+ |                              "content": f"Analyze this schema:
+ |      {schema}"
+ |                          }
+ |                      ]
+ |      
+ |                  @server.prompt()
+ |                  async def analyze_file(path: str) -> list[Message]:
+ |                      content = await read_file(path)
+ |                      return [
+ |                          {
+ |                              "role": "user",
+ |                              "content": {
+ |                                  "type": "resource",
+ |                                  "resource": {
+ |                                      "uri": f"file://{path}",
+ |                                      "text": content
+ |                                  }
+ |                              }
+ |                          }
+ |                      ]
+ |  
+ |  async read_resource(self, uri: pydantic.networks.AnyUrl | str) -> str | bytes
+ |      Read a resource by URI.
+ |  
+ |  resource(self, uri: str, *, name: str | None = None, description: str | None = None, mime_type: str | None = None) -> Callable
+ |      Decorator to register a function as a resource.
+ |      
+ |      The function will be called when the resource is read to generate its content.
+ |      The function can return:
+ |      - str for text content
+ |      - bytes for binary content
+ |      - other types will be converted to JSON
+ |      
+ |      If the URI contains parameters (e.g. "resource://{param}") or the function
+ |      has parameters, it will be registered as a template resource.
+ |      
+ |      Args:
+ |          uri: URI for the resource (e.g. "resource://my-resource" or "resource://{param}")
+ |          name: Optional name for the resource
+ |          description: Optional description of the resource
+ |          mime_type: Optional MIME type for the resource
+ |      
+ |      Example:
+ |          @server.resource("resource://my-resource")
+ |          def get_data() -> str:
+ |              return "Hello, world!"
+ |      
+ |          @server.resource("resource://my-resource")
+ |          async get_data() -> str:
+ |              data = await fetch_data()
+ |              return f"Hello, world! {data}"
+ |      
+ |          @server.resource("resource://{city}/weather")
+ |          def get_weather(city: str) -> str:
+ |              return f"Weather for {city}"
+ |      
+ |          @server.resource("resource://{city}/weather")
+ |          async def get_weather(city: str) -> str:
+ |              data = await fetch_weather(city)
+ |              return f"Weather for {city}: {data}"
+ |  
+ |  run(self, transport: Literal['stdio', 'sse'] = 'stdio') -> None
+ |      Run the FastMCP server. Note this is a synchronous function.
+ |      
+ |      Args:
+ |          transport: Transport protocol to use ("stdio" or "sse")
+ |  
+ |  async run_sse_async(self) -> None
+ |      Run the server using SSE transport.
+ |  
+ |  async run_stdio_async(self) -> None
+ |      Run the server using stdio transport.
+ |  
+ |  tool(self, name: str | None = None, description: str | None = None) -> Callable
+ |      Decorator to register a tool.
+ |      
+ |      Tools can optionally request a Context object by adding a parameter with the
+ |      Context type annotation. The context provides access to MCP capabilities like
+ |      logging, progress reporting, and resource access.
+ |      
+ |      Args:
+ |          name: Optional name for the tool (defaults to function name)
+ |          description: Optional description of what the tool does
+ |      
+ |      Example:
+ |          @server.tool()
+ |          def my_tool(x: int) -> str:
+ |              return str(x)
+ |      
+ |          @server.tool()
+ |          def tool_with_context(x: int, ctx: Context) -> str:
+ |              ctx.info(f"Processing {x}")
+ |              return str(x)
+ |      
+ |          @server.tool()
+ |          async def async_tool(x: int, context: Context) -> str:
+ |              await context.report_progress(50, 100)
+ |              return str(x)
+ |  
+ |  ----------------------------------------------------------------------
+ |  Readonly properties defined here:
+ |  
+ |  name
+ |  
+ |  ----------------------------------------------------------------------
+ |  Data descriptors defined here:
+ |  
+ |  __dict__
+ |      dictionary for instance variables (if defined)
+ |  
+ |  __weakref__
+ |      list of weak references to the object (if defined)
+

