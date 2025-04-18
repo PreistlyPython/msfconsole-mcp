@@ -20,7 +20,7 @@ from typing import Dict, Any, Optional, List, Tuple, Union
 
 # Set up logging with configurable handlers
 logger = logging.getLogger("msfconsole_mcp")
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 
 # Create formatters
 log_format = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -612,23 +612,40 @@ class MCPServer:
         )
 
     async def _handle_notification(self, notification: Dict[str, Any]):
-        """Handle JSON-RPC notification messages."""
-        method = notification.get("method", "")
-        params = notification.get("params", {})
+    """Handle JSON-RPC notification messages."""
+    method = notification.get("method", "")
+    params = notification.get("params", {})
+    
+    logger.debug(f"Handling notification: method={method}, params={params}")
+    
+    if method == "initialized":
+        self.initialized = True
+        logger.info("Client sent initialized notification, server ready")
         
-        logger.debug(f"Handling notification: method={method}")
-        
-        if method == "initialized":
-            self.initialized = True
-            logger.info("Client sent initialized notification, server ready")
-            return
-        
-        if method == "$/cancelRequest":
-            # Implement request cancellation (optional)
-            logger.info(f"Cancellation requested for: {params.get('id')}")
-            return
-        
-        logger.debug(f"Ignoring unknown notification: {method}")
+        # Send a log message to confirm we received the notification
+        await self._send_log("info", "Server successfully initialized")
+        return
+    
+    if method == "$/cancelRequest":
+        # Implement request cancellation (optional)
+        logger.info(f"Cancellation requested for: {params.get('id')}")
+        return
+    
+    logger.debug(f"Ignoring unknown notification: {method}")
+
+async def _send_log(self, level: str, message: str):
+    """Send a log message to the client."""
+    log_notification = {
+        "jsonrpc": JSONRPC_VERSION,
+        "method": "notifications/log",
+        "params": {
+            "level": level,
+            "message": message
+        }
+    }
+    await self._send_json(log_notification)
+    logger.debug(f"Sent log notification: {level} - {message}")
+
 
     async def _handle_initialize(self, request_id: Union[str, int], params: Dict[str, Any]):
         """Handle the initialize request."""
@@ -723,13 +740,20 @@ class MCPServer:
                 f"Error executing tool: {str(e)}"
             )
     async def _send_json(self, data: Dict[str, Any]):
-        """Send a JSON response to stdout."""
-        try:
-            json_str = json.dumps(data)
-            # In MCP, we must ensure only valid JSON is sent to stdout
-            print(json_str, flush=True)
-        except Exception as e:
-            logger.error(f"Error sending JSON response: {e}")
+    """Send a JSON response to stdout."""
+    try:
+        # Add newline to ensure proper message separation
+        json_str = json.dumps(data) + "
+"
+        logger.debug(f"Sending JSON response (first 100 chars): {json_str[:100]}...")
+        # In MCP, we must ensure only valid JSON is sent to stdout
+        sys.stdout.write(json_str)
+        sys.stdout.flush()
+        logger.debug("JSON response sent and flushed")
+    except Exception as e:
+        logger.error(f"Error sending JSON response: {e}")
+        logger.error(f"Response data: {str(data)[:200]}...")
+
 
     async def _send_error(self, 
                           request_id: Optional[Union[str, int]], 
