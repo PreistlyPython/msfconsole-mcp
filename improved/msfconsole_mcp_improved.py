@@ -25,6 +25,35 @@ parser.add_argument("--json-stdout", action="store_true", help="Ensure all stdou
 parser.add_argument("--strict-mode", action="store_true", help="Run in strict JSON mode")
 parser.add_argument("--debug-to-stderr", action="store_true", help="Redirect debug output to stderr")
 args = parser.parse_args()
+# Handle JSON filtering for stdout if requested
+if json_stdout:
+    try:
+        # Try to import our improved JSON filter
+        from json_filter import install_json_filter
+        json_filter = install_json_filter(debug=True)
+        logger.info("Using enhanced JSON filtering for stdout")
+    except ImportError:
+        # Fallback to basic JSON filtering
+        class SafeStdout:
+            def __init__(self, original_stdout=sys.stdout):
+                self.original_stdout = original_stdout
+
+            def write(self, text):
+                if not text.strip():
+                    return 0
+                try:
+                    json.loads(text)
+                    return self.original_stdout.write(text)
+                except json.JSONDecodeError:
+                    print(f"Filtered non-JSON: {text[:50]}...", file=sys.stderr)
+                    return len(text)
+
+            def flush(self):
+                self.original_stdout.flush()
+
+        sys.stdout = SafeStdout()
+        logger.info("Using basic JSON filtering for stdout")
+
 
 # Configure JSON handling
 json_stdout = args.json_stdout or "MCP_STRICT_JSON" in os.environ
