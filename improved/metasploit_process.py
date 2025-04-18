@@ -57,6 +57,11 @@ class MetasploitProcess:
         
         # Track the current command marker
         self.current_marker = None
+        
+        # MSFCONSOLE prompt detector
+        self.stdout_buffer = ""
+        self.stderr_buffer = ""
+        self.prompt_detected = asyncio.Event()
 
     async def start(self) -> bool:
         """
@@ -103,7 +108,7 @@ class MetasploitProcess:
             
             # Wait for prompt to ensure process is ready
             try:
-                await asyncio.wait_for(self._wait_for_prompt(), 10)
+                await asyncio.wait_for(self.prompt_detected.wait(), 10)
                 logger.info("Metasploit console started successfully and ready for commands")
                 return True
             except asyncio.TimeoutError:
@@ -114,49 +119,13 @@ class MetasploitProcess:
             logger.error(f"Failed to start Metasploit console: {str(e)}")
             raise
 
-    async def _wait_for_prompt(self) -> None:
-        """
-        Wait for the initial prompt to appear, indicating the console is ready.
-        
-        Raises:
-            asyncio.TimeoutError: If prompt doesn't appear within timeout
-        """
-        future = asyncio.Future()
-        
-        async def check_prompt():
-            buffer = ""
-            while self.running and not future.done():
-                if self.process and not self.process.stdout.at_eof():
-                    try:
-                        data = await self.process.stdout.read(1024)
-                        if data:
-                            buffer += data.decode("utf-8", errors="replace")
-                            if re.search(r"msf\w*\s*>\s*$", buffer, re.MULTILINE):
-                                logger.debug("Initial prompt detected")
-                                future.set_result(True)
-                                return
-                    except Exception as e:
-                        logger.error(f"Error checking for prompt: {e}")
-                await asyncio.sleep(0.1)
-        
-        task = asyncio.create_task(check_prompt())
-        try:
-            return await future
-        except asyncio.CancelledError:
-            task.cancel()
-            raise
-        finally:
-            task.cancel()
-
-    async def execute_command(self, command: str, timeout: int = None, expect_patterns: List[str] = None) -> str:
+    async def execute_command(self, command: str, timeout: int = None) -> str:
         """
         Execute a command in the Metasploit console with enhanced error handling.
         
         Args:
             command: The command to execute
             timeout: Optional timeout in seconds (defaults to self.command_timeout)
-            expect_patterns: Optional list of regex patterns to look for in the output
-                          to consider the command complete
         
         Returns:
             The command output as a string
@@ -261,7 +230,6 @@ class MetasploitProcess:
         """
         Process stdout from the Metasploit console with enhanced error detection.
         """
-        buffer = ""
         prompt_pattern = r"\s*msf\w*\s*>\s*$"
         
         while self.running and self.process and not self.process.stdout.at_eof():
@@ -274,34 +242,37 @@ class MetasploitProcess:
                 
                 # Decode and add to buffer
                 chunk = data.decode("utf-8", errors="replace")
-                buffer += chunk
+                self.stdout_buffer += chunk
                 
-                # Debug log the raw output if we have an active command
-                if self.current_marker:
-                    logger.debug(f"[{self.current_marker}] Raw stdout: {chunk}")
-                
-                # Check for command prompt which indicates command completion
-                if re.search(prompt_pattern, buffer, re.MULTILINE):
+                # Check for prompt in the buffer
+                if re.search(prompt_pattern, self.stdout_buffer, re.MULTILINE):
+                    # Prompt detected - set the event
+                    if not self.prompt_detected.is_set():
+                        logger.debug("Initial prompt detected")
+                        self.prompt_detected.set()
+                    
+                    # Debug log the raw output if we have an active command
                     if self.current_marker:
+                        logger.debug(f"[{self.current_marker}] Raw stdout: {chunk}")
                         logger.debug(f"[{self.current_marker}] Command completed, detected prompt")
-                        result = buffer.strip()
-                        buffer = ""
+                        result = self.stdout_buffer.strip()
+                        self.stdout_buffer = ""
                         
                         # Put result in queue
                         await self.result_queue.put(result)
                         self.current_marker = None
                     else:
                         # No current command, just clear the buffer
-                        buffer = ""
+                        self.stdout_buffer = ""
                 
                 # Check for error or success patterns for better logging
                 if self.current_marker:
-                    error_match = re.search(r"\s*\[-\]\s*(.*?)$", buffer, re.MULTILINE)
+                    error_match = re.search(r"\s*\[-\]\s*(.*?)$", self.stdout_buffer, re.MULTILINE)
                     if error_match:
                         error_msg = error_match.group(1)
                         logger.warning(f"[{self.current_marker}] Command error detected: {error_msg}")
                     
-                    success_match = re.search(r"\s*\[\+\]\s*(.*?)$", buffer, re.MULTILINE)
+                    success_match = re.search(r"\s*\[\+\]\s*(.*?)$", self.stdout_buffer, re.MULTILINE)
                     if success_match:
                         success_msg = success_match.group(1)
                         logger.debug(f"[{self.current_marker}] Command success detected: {success_msg}")
@@ -309,19 +280,20 @@ class MetasploitProcess:
             except Exception as e:
                 logger.error(f"Error processing stdout: {e}")
                 # Don't lose the buffer on error
-                if self.current_marker and buffer:
-                    logger.debug(f"[{self.current_marker}] Saving partial output due to error: {buffer}")
-                    await self.result_queue.put(f"ERROR processing output: {e}\n\nPartial output:\n{buffer}")
+                if self.current_marker and self.stdout_buffer:
+                    logger.debug(f"[{self.current_marker}] Saving partial output due to error: {self.stdout_buffer}")
+                    await self.result_queue.put(f"ERROR processing output: {e}\n\nPartial output:\n{self.stdout_buffer}")
                     self.current_marker = None
-                    buffer = ""
+                    self.stdout_buffer = ""
                 await asyncio.sleep(0.1)  # Avoid tight loop on errors
         
         logger.warning("Stdout processing stopped")
         # Clear any pending commands
         if self.current_marker:
             logger.warning(f"[{self.current_marker}] Process stopped while command was active")
-            await self.result_queue.put(f"ERROR: Process stopped while command was active\n\nPartial output:\n{buffer}")
+            await self.result_queue.put(f"ERROR: Process stopped while command was active\n\nPartial output:\n{self.stdout_buffer}")
             self.current_marker = None
+            self.stdout_buffer = ""
 
     async def _process_stderr(self) -> None:
         """
@@ -336,6 +308,8 @@ class MetasploitProcess:
                 
                 # Log stderr output
                 stderr_text = data.decode("utf-8", errors="replace").strip()
+                self.stderr_buffer += stderr_text
+                
                 if stderr_text:
                     # Try to categorize the error
                     if "Error:" in stderr_text:
