@@ -31,6 +31,66 @@ json_stdout = args.json_stdout or "MCP_STRICT_JSON" in os.environ
 strict_mode = args.strict_mode or "MCP_STRICT_JSON" in os.environ
 debug_to_stderr = args.debug_to_stderr or "MCP_DEBUG_TO_STDERR" in os.environ
 
+# Configure log handlers for stderr only to ensure clean stdout JSON
+log_file = "msfconsole_mcp_improved.log"
+log_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+# Configure root logger to use stderr only
+logging.basicConfig(
+    level=logging.INFO,
+    format=log_format,
+    handlers=[
+        logging.FileHandler(log_file),
+        logging.StreamHandler(sys.stderr)  # Always use stderr for logging
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Create a custom stdout wrapper that ensures only valid JSON is printed
+# This is critical for MCP communication
+class SafeStdout:
+    def __init__(self, original_stdout=sys.stdout):
+        self.original_stdout = original_stdout
+        self.buffer = ""
+    
+    def write(self, text):
+        if not json_stdout:
+            # If JSON stdout is not required, pass through directly
+            return self.original_stdout.write(text)
+        
+        # Only attempt to validate and write if there's actual content
+        if text.strip():
+            try:
+                # Check if it's valid JSON before printing
+                json.loads(text)
+                # It's valid JSON, so print it
+                return self.original_stdout.write(text)
+            except json.JSONDecodeError:
+                # Not valid JSON, redirect to stderr
+                print(f"Filtered non-JSON output: {text[:100]}...", file=sys.stderr)
+                return 0
+        return 0
+    
+    def flush(self):
+        self.original_stdout.flush()
+
+# Replace stdout only if json_stdout is enabled
+if json_stdout:
+    sys.stdout = SafeStdout()
+
+# Utility to ensure print statements never break JSON protocol
+def safe_print(*args, **kwargs):
+    """Safe print function that respects JSON stdout mode"""
+    if debug_to_stderr or json_stdout:
+        # If we're in strict mode, print debug info to stderr
+        print(*args, file=sys.stderr, **kwargs)
+    else:
+        # Otherwise use normal print
+        print(*args, **kwargs)
+
+# Check Python version
+python_version = ".".join(sys.version.split()[0].split(".")[:2])
+logger.info(f"Python version: {python_version}")
 # Configure log handlers based on settings
 log_handlers = []
 if debug_to_stderr:
