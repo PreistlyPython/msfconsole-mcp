@@ -62,7 +62,6 @@ PYTHON_PATH=$(which python)
 log_stderr "Using Python at: $PYTHON_PATH"
 
 # Function to validate and filter JSON - only passes valid JSON-RPC 2.0 messages
-# Function to validate and filter JSON - only passes valid JSON-RPC 2.0 messages
 filter_valid_json() {
     log_stderr "JSON filter started"
     while IFS= read -r line; do
@@ -78,23 +77,15 @@ filter_valid_json() {
                 # Valid JSON-RPC message - output to stdout with added newline to ensure proper separation
                 echo "$line"
                 log_stderr "Passed valid JSON-RPC message: ${line:0:50}..."
+                echo "Passed valid JSON-RPC message: ${line:0:50}..." >> "$DEBUG_LOG"
             else
                 # Valid JSON but not a JSON-RPC message
                 log_stderr "Filtered non-RPC JSON: ${line:0:50}..."
-            fi
-        else
-            # Not valid JSON - log to stderr
-            log_stderr "Filtered invalid JSON: ${line:0:50}..."
-        fi
-    done
-}
-..." >> "$DEBUG_LOG"
-            else
-                # Valid JSON but not a JSON-RPC message
                 echo "Filtered non-RPC JSON: ${line:0:50}..." >> "$DEBUG_LOG"
             fi
         else
             # Not valid JSON - log to stderr
+            log_stderr "Filtered invalid JSON: ${line:0:50}..."
             echo "Filtered invalid JSON: ${line:0:50}..." >> "$DEBUG_LOG"
         fi
     done

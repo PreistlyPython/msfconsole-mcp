@@ -13,6 +13,7 @@ import logging
 import subprocess
 import asyncio
 import json
+import re
 import shutil
 import time
 import argparse
@@ -74,7 +75,7 @@ class ErrorCode:
     TIMEOUT_ERROR = -32003
 
 # Path to Metasploit executables
-MSF_BIN_PATH = "/usr/share/metasploit-framework/bin"
+MSF_BIN_PATH = "/usr/bin"
 MSFCONSOLE_PATH = os.path.join(MSF_BIN_PATH, "msfconsole")
 MSFVENOM_PATH = os.path.join(MSF_BIN_PATH, "msfvenom")
 
@@ -123,213 +124,122 @@ class MetasploitProcess:
         except Exception as e:
             logger.error(f"Failed to start Metasploit console: {e}")
             raise
-            if scan_type == 'ping':
-                # Simple ping scan
-                command = f'db_nmap -sn {target}'
-                if options:
-                    command += f' {options}'
-                
-                commands.append(command)
-                outputs.append(await self.msf.execute_command(command))
-                
-            elif scan_type == 'port':
-                # TCP port scan
-                command = f'db_nmap -sS {target}'
-                if options:
-                    command += f' {options}'
-                
-                commands.append(command)
-                outputs.append(await self.msf.execute_command(command))
-                
-            elif scan_type == 'service':
-                # Service detection scan
-                command = f'db_nmap -sS -sV {target}'
-                if options:
-                    command += f' {options}'
-                
-                commands.append(command)
-                outputs.append(await self.msf.execute_command(command))
-                
-            elif scan_type == 'vuln':
-                # Vulnerability scan
-                command = f'db_nmap -sS -sV --script vuln {target}'
-                if options:
-                    command += f' {options}'
-                
-                commands.append(command)
-                outputs.append(await self.msf.execute_command(command))
-            
-            else:
-                return {'error': f'Unknown scan type: {scan_type}'}
-            
-            # Get scan results from database
-            commands.append('hosts')
-            outputs.append(await self.msf.execute_command('hosts'))
-            
-            commands.append('services')
-            outputs.append(await self.msf.execute_command('services'))
-            
-            return {
-                'scan_type': scan_type,
-                'target': target,
-                'options': options if options else None,
-                'commands': commands,
-                'raw_output': outputs
-            }
-        except Exception as e:
-            logger.error(f'Error running scan: {e}')
-            raise
 
-    async def _tool_manage_database(self, command: str) -> Dict[str, Any]:
-        """Manage the Metasploit database."""
-        try:
-            msf_command = command
-            if command == 'status':
-                msf_command = 'db_status'
-            elif command == 'hosts':
-                msf_command = 'hosts'
-            elif command == 'services':
-                msf_command = 'services'
-            elif command == 'vulns':
-                msf_command = 'vulns'
-            elif command == 'creds':
-                msf_command = 'creds'
-            elif command == 'loot':
-                msf_command = 'loot'
-            elif command == 'notes':
-                msf_command = 'notes'
-            else:
-                return {'error': f'Unknown database command: {command}'}
-            
-            output = await self.msf.execute_command(msf_command)
-            
-            return {
-                'command': command,
-                'output': output
-            }
-        except Exception as e:
-            logger.error(f'Error managing database: {e}')
-            raise
-
-    async def _tool_manage_sessions(self, command: str, session_id: str) -> Dict[str, Any]:
-        """List and manage Metasploit sessions."""
-        try:
-            msf_command = 'sessions'
-            
-            if command == 'list':
-                msf_command = 'sessions -v'
-            elif command == 'interact' and session_id:
-                # For interactive sessions, this will be more complex
-                # We'll just provide information since we can't truly interact via MCP
-                return {
-                    'command': command,
-                    'session_id': session_id,
-                    'message': 'Interactive sessions are not supported via MCP. Use list to view sessions.'
-                }
-            elif command == 'kill' and session_id:
-                msf_command = f'sessions -k {session_id}'
-            else:
-                return {'error': 'Invalid session command or missing session ID'}
-            
-            output = await self.msf.execute_command(msf_command)
-            
-            return {
-                'command': command,
-                'session_id': session_id if session_id else None,
-                'output': output
-            }
-        except Exception as e:
-            logger.error(f'Error managing sessions: {e}')
-            raise
-    async def _tool_generate_payload(self, payload: str, options: str) -> Dict[str, Any]:
-        """Generate a payload using msfvenom."""
-        if not payload:
-            return {'error': 'No payload specified'}
+    async def execute_command(self, command: str, timeout: int = None) -> str:
+        """Execute a command in the Metasploit console and return the result."""
+        if not self.running:
+            raise RuntimeError("Metasploit console is not running")
+        
+        # Use specified timeout or default
+        timeout = timeout or self.command_timeout
+        
+        # Queue the command
+        await self.command_queue.put(command)
         
         try:
-            # Using msfvenom via the MSF console
-            command = f'use payload/{payload}'
-            await self.msf.execute_command(command)
-            
-            # Set options and generate
-            if options:
-                option_pairs = options.split()
-                for option in option_pairs:
-                    if '=' in option:
-                        key, value = option.split('=', 1)
-                        await self.msf.execute_command(f'set {key} {value}')
-            
-            # Generate the payload
-            output = await self.msf.execute_command('generate')
-            
-            return {
-                'payload': payload,
-                'options': options if options else None,
-                'output': output
-            }
-        except Exception as e:
-            logger.error(f'Error generating payload: {e}')
-            raise
+            # Wait for result with timeout
+            result = await asyncio.wait_for(self.result_queue.get(), timeout)
+            return result
+        except asyncio.TimeoutError:
+            logger.error(f"Command timed out after {timeout} seconds: {command}")
+            raise TimeoutError(f"Command execution timed out: {command}")
 
-    async def _tool_show_module_info(self, module_path: str) -> Dict[str, Any]:
-        """Show detailed information about a Metasploit module."""
-        if not module_path:
-            return {'error': 'No module path specified'}
+    async def stop(self):
+        """Stop the Metasploit console process."""
+        if self.process and self.process.returncode is None:
+            logger.info("Stopping Metasploit console process...")
+            try:
+                # Try to exit gracefully
+                await self.execute_command("exit", timeout=5)
+            except Exception:
+                pass
+            
+            # Terminate if still running
+            try:
+                self.process.terminate()
+                await asyncio.wait_for(self.process.wait(), 5)
+            except (asyncio.TimeoutError, ProcessLookupError):
+                logger.warning("Force killing Metasploit console process")
+                self.process.kill()
+            
+        self.running = False
+        logger.info("Metasploit console stopped")
+
+    async def _process_stdout(self):
+        """Process stdout from the Metasploit console."""
+        buffer = ""
+        prompt_pattern = r"\s*msf\w*\s*>\s*$"
         
-        try:
-            # Use the module
-            use_output = await self.msf.execute_command(f'use {module_path}')
-            
-            # Get info
-            info_output = await self.msf.execute_command('info')
-            
-            # Get options
-            options_output = await self.msf.execute_command('options')
-            
-            return {
-                'module_path': module_path,
-                'info': info_output,
-                'options': options_output
-            }
-        except Exception as e:
-            logger.error(f'Error showing module info: {e}')
-            raise
+        while self.running and self.process and not self.process.stdout.at_eof():
+            try:
+                # Read a chunk of data
+                data = await self.process.stdout.read(1024)
+                if not data:
+                    break
+                
+                # Decode and add to buffer
+                buffer += data.decode("utf-8", errors="replace")
+                
+                # Check for command prompt
+                if re.search(prompt_pattern, buffer, re.MULTILINE):
+                    # We have a complete command result
+                    result = buffer.strip()
+                    buffer = ""
+                    
+                    # Put result in queue if we're waiting for one
+                    if not self.result_queue.empty():
+                        await self.result_queue.put(result)
+            except Exception as e:
+                logger.error(f"Error processing stdout: {e}")
+                break
+        
+        logger.warning("Stdout processing stopped")
 
-    async def _tool_browse_documentation(self, document_name: str) -> Dict[str, Any]:
-        """Browse and view documentation files."""
-        try:
-            if not document_name:
-                # List available documentation
-                output = await self.msf.execute_command('help')
-                return {
-                    'available_docs': output.split('\n')
-                }
-            else:
-                # View specific documentation
-                output = await self.msf.execute_command(f'help {document_name}')
-                return {
-                    'document_name': document_name,
-                    'content': output
-                }
-        except Exception as e:
-            logger.error(f'Error browsing documentation: {e}')
-            raise
+    async def _process_stderr(self):
+        """Process stderr from the Metasploit console."""
+        while self.running and self.process and not self.process.stderr.at_eof():
+            try:
+                data = await self.process.stderr.read(1024)
+                if not data:
+                    break
+                
+                # Log stderr output
+                stderr_text = data.decode("utf-8", errors="replace").strip()
+                if stderr_text:
+                    logger.warning(f"Metasploit stderr: {stderr_text}")
+            except Exception as e:
+                logger.error(f"Error processing stderr: {e}")
+                break
+        
+        logger.warning("Stderr processing stopped")
 
-    async def _tool_list_mcp_commands(self) -> Dict[str, Any]:
-        """List all available commands and tools in this MCP."""
-        try:
-            tool_list = [{
-                'name': tool['name'],
-                'description': tool['description']
-            } for tool in self.tools]
-            
-            return {
-                'tools': tool_list,
-                'server_info': self.server_info
-            }
-        except Exception as e:
-            logger.error(f'Error listing MCP commands: {e}')
-            raise
+    async def _command_processor(self):
+        """Process commands from the queue and send to Metasploit console."""
+        while self.running:
+            try:
+                # Get command from queue
+                command = await self.command_queue.get()
+                
+                # Send command to process
+                if self.process and self.process.stdin and not self.process.stdin.is_closing():
+                    self.process.stdin.write(f"{command}\n".encode("utf-8"))
+                    await self.process.stdin.drain()
+                    logger.debug(f"Sent command: {command}")
+                else:
+                    logger.error("Cannot send command: stdin not available")
+                    await self.result_queue.put("ERROR: stdin not available")
+                
+                # Mark command as done
+                self.command_queue.task_done()
+            except Exception as e:
+                logger.error(f"Error processing command: {e}")
+                # Ensure we don't block waiting for result
+                if not self.result_queue.empty():
+                    await self.result_queue.put(f"ERROR: {str(e)}")
+                await asyncio.sleep(1)  # Prevent tight loop on errors
+
+# Import the MCPServer class from mcp_server.py
+from mcp_server import MCPServer
 
 # Main entry point
 async def main():
