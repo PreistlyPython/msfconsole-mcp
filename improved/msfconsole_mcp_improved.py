@@ -74,7 +74,7 @@ class ErrorCode:
     TIMEOUT_ERROR = -32003
 
 # Path to Metasploit executables
-MSF_BIN_PATH = "/usr/share/metasploit-framework/bin"
+MSF_BIN_PATH = "/usr/bin"
 MSFCONSOLE_PATH = os.path.join(MSF_BIN_PATH, "msfconsole")
 MSFVENOM_PATH = os.path.join(MSF_BIN_PATH, "msfvenom")
 
