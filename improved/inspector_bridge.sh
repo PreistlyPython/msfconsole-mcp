@@ -5,7 +5,7 @@
 # =================================================================
 # This script acts as a bridge between the MCP Inspector and our 
 # improved Metasploit MCP implementation, ensuring that only valid
-# JSON-RPC protocol messages are passed to stdout.
+# JSON-RPC 2.0 protocol messages are passed to stdout.
 # =================================================================
 
 # Function to log messages to stderr only for debugging
@@ -28,7 +28,7 @@ log_stderr "Working Directory: $(pwd)"
 
 # Activate the virtual environment
 if [ -f "/home/dell/coding/mcp/msfconsole/venv/bin/activate" ]; then
-    source /home/dell/coding/mcp/msfconsole/venv/bin/activate 2>&1
+    source /home/dell/coding/mcp/msfconsole/venv/bin/activate
     log_stderr "Virtual environment activated successfully"
 else
     log_stderr "ERROR: Virtual environment not found"
@@ -55,7 +55,7 @@ cleanup() {
     log_stderr "Cleaning up resources..."
     rm -f "$FIFO_PATH"
 }
-trap cleanup EXIT
+trap cleanup EXIT INT TERM
 
 # Ensure path to Python is absolute
 PYTHON_PATH=$(which python)
@@ -73,17 +73,17 @@ filter_valid_json() {
         # Test if line is valid JSON before passing it through
         if echo "$line" | "$PYTHON_PATH" -c "import sys,json; json.loads(sys.stdin.read())" &>/dev/null; then
             # Check if it's a valid JSON-RPC 2.0 message (contains jsonrpc field)
-            if echo "$line" | "$PYTHON_PATH" -c "import sys,json; obj=json.loads(sys.stdin.read()); sys.exit(0 if 'jsonrpc' in obj else 1)" &>/dev/null; then
+            if echo "$line" | "$PYTHON_PATH" -c "import sys,json; obj=json.loads(sys.stdin.read()); sys.exit(0 if 'jsonrpc' in obj and obj['jsonrpc'] == '2.0' else 1)" &>/dev/null; then
                 # Valid JSON-RPC message - output to stdout
                 echo "$line"
-                log_stderr "Passed valid JSON-RPC message" >> "$DEBUG_LOG"
+                echo "Passed valid JSON-RPC message: ${line:0:50}..." >> "$DEBUG_LOG"
             else
                 # Valid JSON but not a JSON-RPC message
-                log_stderr "Filtered non-RPC JSON: ${line:0:50}..." >> "$DEBUG_LOG"
+                echo "Filtered non-RPC JSON: ${line:0:50}..." >> "$DEBUG_LOG"
             fi
         else
             # Not valid JSON - log to stderr
-            log_stderr "Filtered invalid JSON: ${line:0:50}..." >> "$DEBUG_LOG"
+            echo "Filtered invalid JSON: ${line:0:50}..." >> "$DEBUG_LOG"
         fi
     done
 }
@@ -102,10 +102,10 @@ FILTER_PID=$!
 log_stderr "Launching Improved Metasploit MCP..."
 
 # Execute with stdout to the FIFO (for filtering) and stderr directly to debug log
-/home/dell/coding/mcp/msfconsole/venv/bin/python -u msfconsole_mcp_improved.py \
+"$PYTHON_PATH" -u msfconsole_mcp_improved.py \
     --json-stdout \
     --strict-mode \
-    --debug-to-stderr > "$FIFO_PATH" 2>"$DEBUG_LOG"
+    --debug-to-stderr > "$FIFO_PATH" 2> >(tee -a "$DEBUG_LOG" >&2)
 
 # Save exit code
 EXIT_CODE=$?
@@ -113,12 +113,12 @@ log_stderr "MCP process exited with code: $EXIT_CODE"
 
 # Log the last few lines of debug output
 log_stderr "Last 10 lines of debug log:"
-tail -n 10 "$DEBUG_LOG" | while read -r line; do
+tail -n 10 "$DEBUG_LOG" | while IFS= read -r line; do
     log_stderr "  $line"
 done
 
 # Wait for filter to finish
-wait $FILTER_PID
+wait $FILTER_PID 2>/dev/null || true
 
 # Exit with the original exit code
 exit $EXIT_CODE
