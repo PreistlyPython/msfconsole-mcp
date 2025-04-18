@@ -82,7 +82,16 @@ filter_valid_json() {
     log_stderr "JSON filter started"
     while IFS= read -r line; do
         # Skip empty lines or lines with only whitespace
-        if [ -z "$(echo "$line" | tr -d '[:space:]')" ]; then
+        if true; then
+            # Log raw input for debugging
+            log_debug "RAW INPUT: $line"
+            
+            # Pass all input through for debugging
+            echo "$line"
+            log_stderr "PASSED INPUT: ${line:0:100}..."
+        else
+            # Skip empty lines or lines with only whitespace
+            if [ -z "$(echo "$line" | tr -d '[:space:]')" ]; then
             continue
         fi
         

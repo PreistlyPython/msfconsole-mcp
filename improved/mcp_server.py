@@ -133,6 +133,7 @@ class MCPServer:
                     
                     # Debug log the raw input
                     logger.debug(f"Raw input received: {line[:100]}...")
+        logger.info(f"Input from client: {line.strip()}")
                     
                     # Check for EOF
                     if not line:
