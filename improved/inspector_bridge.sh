@@ -4,10 +4,8 @@
 # MCP Inspector Bridge for Improved Metasploit MCP Server
 # =================================================================
 # This script acts as a bridge between the MCP Inspector and our 
-# improved Metasploit MCP implementation. It handles:
-#  - Setting up proper environment variables
-#  - Filtering non-JSON output to prevent MCP protocol errors
-#  - Ensuring proper error propagation
+# improved Metasploit MCP implementation, ensuring that only valid
+# JSON-RPC protocol messages are passed to stdout.
 # =================================================================
 
 # Function to log messages to stderr only for debugging
@@ -27,7 +25,6 @@ log_stderr "Python Version: $(python --version 2>&1)"
 log_stderr "Virtual Environment: $(which python)"
 log_stderr "PYTHONPATH: $PYTHONPATH"
 log_stderr "Working Directory: $(pwd)"
-log_stderr "Process ID: $$"
 
 # Activate the virtual environment
 if [ -f "/home/dell/coding/mcp/msfconsole/venv/bin/activate" ]; then
@@ -38,72 +35,90 @@ else
     exit 1
 fi
 
+# Create a debug log
+DEBUG_LOG="/tmp/mcp_bridge_$(date +%Y%m%d_%H%M%S).log"
+log_stderr "Logging debug output to $DEBUG_LOG"
+
 # Change to the improved directory
-if ! cd /home/dell/coding/mcp/msfconsole/improved 2>&1; then
-    log_stderr "ERROR: Failed to change directory to improved folder"
+cd /home/dell/coding/mcp/msfconsole/improved || {
+    log_stderr "Failed to change directory"
     exit 1
-fi
+}
 
-# Check if the main script exists
-if [ ! -f "msfconsole_mcp_improved.py" ]; then
-    log_stderr "ERROR: msfconsole_mcp_improved.py not found"
-    exit 1
-fi
-
-# Make sure the script is executable
-chmod +x msfconsole_mcp_improved.py 2>&1
-
-# Create a temporary named pipe for filtering JSON
+# Create a temporary named pipe for JSON filtering
 FIFO_PATH=$(mktemp -u)
 mkfifo "$FIFO_PATH"
+log_stderr "Created JSON filter FIFO at $FIFO_PATH"
 
-# Clean up on exit - remove the FIFO and any temp files
+# Clean up on exit - remove the FIFO
 cleanup() {
     log_stderr "Cleaning up resources..."
     rm -f "$FIFO_PATH"
 }
 trap cleanup EXIT
 
-# Function to validate and filter JSON
+# Ensure path to Python is absolute
+PYTHON_PATH=$(which python)
+log_stderr "Using Python at: $PYTHON_PATH"
+
+# Function to validate and filter JSON - only passes valid JSON-RPC 2.0 messages
 filter_valid_json() {
     log_stderr "JSON filter started"
     while IFS= read -r line; do
-        # Skip empty lines
-        if [ -z "$line" ]; then
+        # Skip empty lines or lines with only whitespace
+        if [ -z "$(echo "$line" | tr -d '[:space:]')" ]; then
             continue
         fi
         
         # Test if line is valid JSON before passing it through
-        if echo "$line" | python -c "import sys,json; json.loads(sys.stdin.read())" &>/dev/null; then
-            # Valid JSON - output to stdout
-            echo "$line"
+        if echo "$line" | "$PYTHON_PATH" -c "import sys,json; json.loads(sys.stdin.read())" &>/dev/null; then
+            # Check if it's a valid JSON-RPC 2.0 message (contains jsonrpc field)
+            if echo "$line" | "$PYTHON_PATH" -c "import sys,json; obj=json.loads(sys.stdin.read()); sys.exit(0 if 'jsonrpc' in obj else 1)" &>/dev/null; then
+                # Valid JSON-RPC message - output to stdout
+                echo "$line"
+                log_stderr "Passed valid JSON-RPC message" >> "$DEBUG_LOG"
+            else
+                # Valid JSON but not a JSON-RPC message
+                log_stderr "Filtered non-RPC JSON: ${line:0:50}..." >> "$DEBUG_LOG"
+            fi
         else
-            # Invalid JSON - log to stderr
-            log_stderr "Invalid JSON filtered: ${line:0:50}..."
+            # Not valid JSON - log to stderr
+            log_stderr "Filtered invalid JSON: ${line:0:50}..." >> "$DEBUG_LOG"
         fi
     done
 }
 
-# Set environment variables for proper MCP operation
+# Set environment variables for MCP
 export MCP_DEBUG=1
 export MCP_DEBUG_TO_STDERR=1
 export MCP_TRANSPORT=stdio
-
-# Launch the Python script with proper output handling
-log_stderr "Launching Improved Metasploit MCP..."
+export MCP_JSON_STDOUT=1
+export MCP_STRICT_MODE=1
 
 # Start the filter in background, reading from the FIFO
 cat "$FIFO_PATH" | filter_valid_json &
 FILTER_PID=$!
 
-# Run the Python script with stdout redirected to the FIFO and stderr to stderr
-python -u msfconsole_mcp_improved.py --json-stdout --strict-mode --debug-to-stderr > "$FIFO_PATH" 2>&2
+log_stderr "Launching Improved Metasploit MCP..."
 
-# Save exit code and wait for filter to finish
+# Execute with stdout to the FIFO (for filtering) and stderr directly to debug log
+/home/dell/coding/mcp/msfconsole/venv/bin/python -u msfconsole_mcp_improved.py \
+    --json-stdout \
+    --strict-mode \
+    --debug-to-stderr > "$FIFO_PATH" 2>"$DEBUG_LOG"
+
+# Save exit code
 EXIT_CODE=$?
-wait $FILTER_PID
-
 log_stderr "MCP process exited with code: $EXIT_CODE"
+
+# Log the last few lines of debug output
+log_stderr "Last 10 lines of debug log:"
+tail -n 10 "$DEBUG_LOG" | while read -r line; do
+    log_stderr "  $line"
+done
+
+# Wait for filter to finish
+wait $FILTER_PID
 
 # Exit with the original exit code
 exit $EXIT_CODE
