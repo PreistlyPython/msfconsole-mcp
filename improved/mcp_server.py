@@ -8,9 +8,11 @@ This module implements the MCP server for Metasploit Framework integration.
 
 import os
 import sys
+import signal
 import logging
 import json
 import asyncio
+import time
 from typing import Dict, Any, Optional, List, Tuple, Union
 
 # Get logger
@@ -95,42 +97,86 @@ class MCPServer:
         logger.info(f"Initialized {len(self.tools)} tools")
     
     async def start(self):
-        """Start the MCP server."""
+        """Start the MCP server with improved error handling."""
         # Initialize the Metasploit process
-        from msfconsole_mcp_improved import MetasploitProcess
+        from metasploit_process import MetasploitProcess
         self.msf = MetasploitProcess()
-        await self.msf.start()
-        
-        # Start processing JSON-RPC requests
-        await self._process_requests()
+        try:
+            # Start Metasploit with explicit error handling
+            await self.msf.start()
+            logger.info("Metasploit process started successfully")
+            
+            # Start processing JSON-RPC requests
+            await self._process_requests()
+        except Exception as e:
+            logger.error(f"Failed to start MCP server: {e}")
+            raise
     
     async def _process_requests(self):
-        """Process incoming JSON-RPC requests."""
+        """Process incoming JSON-RPC requests with improved error handling."""
         logger.info("MCP server ready to process requests")
+        request_timeout = 30  # Timeout for request processing in seconds
+        
+        # Set a handler for SIGINT to allow for graceful shutdown
+        loop = asyncio.get_running_loop()
+        loop.add_signal_handler(signal.SIGINT, lambda: asyncio.create_task(self._shutdown()))
         
         while True:
             try:
-                # Read a line from stdin
-                line = await asyncio.to_thread(sys.stdin.readline)
-                
-                # Check for EOF
-                if not line:
-                    logger.info("Received EOF, shutting down")
-                    break
-                
-                # Parse as JSON-RPC
+                # Read a line from stdin with timeout
                 try:
-                    request = json.loads(line)
-                    await self._handle_request(request)
-                except json.JSONDecodeError:
-                    logger.warning(f"Received invalid JSON: {line}")
-                    self._send_error(None, -32700, "Parse error", "Invalid JSON was received")
+                    # Use asyncio.wait_for to implement a read timeout
+                    line = await asyncio.wait_for(
+                        asyncio.to_thread(sys.stdin.readline),
+                        timeout=request_timeout
+                    )
+                    
+                    # Debug log the raw input
+                    logger.debug(f"Raw input received: {line[:100]}...")
+                    
+                    # Check for EOF
+                    if not line:
+                        logger.info("Received EOF, shutting down")
+                        break
+                    
+                    # Parse as JSON-RPC
+                    try:
+                        request = json.loads(line)
+                        await self._handle_request(request)
+                    except json.JSONDecodeError as je:
+                        logger.warning(f"Received invalid JSON: {line[:100]}... Error: {je}")
+                        self._send_error(None, -32700, "Parse error", f"Invalid JSON was received: {je}")
+                except asyncio.TimeoutError:
+                    # No input received for a while, that's okay
+                    continue
+                    
+            except asyncio.CancelledError:
+                logger.info("Server processing cancelled")
+                break
             except Exception as e:
                 logger.error(f"Error processing request: {e}")
-                self._send_error(None, -32603, "Internal error", str(e))
+                # Send a generic error if something went wrong
+                try:
+                    self._send_error(None, -32603, "Internal error", str(e))
+                except Exception as e2:
+                    logger.error(f"Failed to send error response: {e2}")
+
+    async def _shutdown(self):
+        """Handle graceful shutdown of the server."""
+        logger.info("Initiating graceful shutdown...")
+        # Stop Metasploit process if it's running
+        if hasattr(self, 'msf') and self.msf:
+            try:
+                await self.msf.stop()
+            except Exception as e:
+                logger.error(f"Error stopping Metasploit process: {e}")
+        
+        # Exit the process
+        logger.info("Shutdown complete")
+        sys.exit(0)
     
     async def _handle_request(self, request: Dict[str, Any]):
-        """Handle a JSON-RPC request."""
+        """Handle a JSON-RPC request with improved timeout handling."""
         # Validate request
         if not isinstance(request, dict) or "method" not in request:
             self._send_error(request.get("id"), -32600, "Invalid request", "Request must be an object with a method field")
@@ -149,23 +195,60 @@ class MCPServer:
         elif method == "shutdown":
             self._handle_shutdown(request_id, params)
             return
+        elif method == "notifications/cancelled":
+            # This is a notification, ignore it
+            logger.info(f"Received cancel notification: params={params}")
+            return
         
         # Find and execute the tool
         tool = next((t for t in self.tools if t["name"] == method), None)
         if tool is None:
+            logger.warning(f"Method not found: {method}")
             self._send_error(request_id, -32601, "Method not found", f"Method '{method}' not found")
             return
         
         try:
-            # Call the tool method with params
-            result = await tool["method"](**params)
-            self._send_result(request_id, result)
+            # Call the tool method with params and a timeout
+            try:
+                # Use a timeout for tool execution to prevent hanging
+                result = await asyncio.wait_for(
+                    tool["method"](**params),
+                    timeout=90  # 90-second timeout for tool execution
+                )
+                self._send_result(request_id, result)
+                logger.debug(f"Tool {method} executed successfully")
+            except asyncio.TimeoutError:
+                logger.error(f"Tool execution timed out: {method}")
+                self._send_error(request_id, -32603, "Execution timeout", f"Tool '{method}' execution timed out")
         except Exception as e:
-            logger.error(f"Error executing tool {method}: {e}")
-            self._send_error(request_id, -32603, "Internal error", str(e))
+            error_detail = str(e)
+            # Generate a unique error ID for tracking
+            error_id = f"err_{int(time.time())}"
+            logger.error(f"Error [{error_id}] executing tool {method}: {error_detail}")
+            
+            # Attempt to extract meaningful error information
+            error_code = -32603  # Default internal error
+            error_msg = "Internal error"
+            
+            if "not found" in error_detail.lower():
+                error_code = -32001
+                error_msg = "Resource not found"
+            elif "permission" in error_detail.lower():
+                error_code = -32002
+                error_msg = "Permission denied"
+            elif "timeout" in error_detail.lower():
+                error_code = -32003
+                error_msg = "Execution timeout"
+            
+            self._send_error(
+                request_id, 
+                error_code, 
+                error_msg, 
+                {"detail": error_detail, "errorId": error_id}
+            )
     
     def _handle_initialize(self, request_id: Any, params: Dict[str, Any]):
-        """Handle the initialize method."""
+        """Handle the initialize method with improved response format."""
         protocol_version = params.get("protocolVersion")
         logger.info(f"Client requested initialization with protocol version: {protocol_version}")
         
@@ -182,14 +265,16 @@ class MCPServer:
             ]
         }
         
+        # Add detailed protocol compliance information
+        logger.debug("Sending extended capabilities information")
         self._send_result(request_id, capabilities)
     
     def _handle_shutdown(self, request_id: Any, params: Dict[str, Any]):
         """Handle the shutdown method."""
         logger.info("Client requested shutdown")
         self._send_result(request_id, {"success": True})
-        # Exit after sending response
-        sys.exit(0)
+        # Schedule shutdown after response is sent
+        asyncio.create_task(self._shutdown())
     
     def _send_result(self, request_id: Any, result: Any):
         """Send a successful JSON-RPC response."""
@@ -198,7 +283,14 @@ class MCPServer:
             "id": request_id,
             "result": result
         }
-        print(json.dumps(response), flush=True)
+        response_json = json.dumps(response)
+        logger.info(f"Sending response for id={request_id}: {response_json[:100]}...")
+        
+        # Ensure each message has a proper newline and flush immediately
+        print(response_json, flush=True)
+        
+        # Log the sent response to debug log for troubleshooting
+        logger.debug(f"Response sent: {response_json}")
     
     def _send_error(self, request_id: Any, code: int, message: str, data: Any = None):
         """Send a JSON-RPC error response."""
@@ -214,7 +306,14 @@ class MCPServer:
             "id": request_id,
             "error": error
         }
-        print(json.dumps(response), flush=True)
+        response_json = json.dumps(response)
+        logger.info(f"Sending error response for id={request_id}: code={code}, message={message}")
+        
+        # Ensure each message has a proper newline and flush immediately
+        print(response_json, flush=True)
+        
+        # Log the sent response to debug log for troubleshooting
+        logger.debug(f"Error response sent: {response_json}")
     
     # Tool implementations
     async def _tool_get_version(self) -> Dict[str, Any]:

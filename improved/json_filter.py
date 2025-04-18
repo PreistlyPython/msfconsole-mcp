@@ -65,8 +65,7 @@ class JSONFilter:
             logger.debug("JSON filter debug logging enabled")
     
     def write(self, data: str):
-        """
-        Filter and write data to stdout.
+        """Filter and write data to stdout.
         
         Args:
             data: Data to write
@@ -82,14 +81,15 @@ class JSONFilter:
             # Check if valid JSON-RPC
             if is_valid_jsonrpc(obj, self.strict):
                 # Valid JSON-RPC message
-                self.stdout.write(data)
-                self.stdout.flush()
+                logger.debug(f"Passing valid JSON-RPC: {data[:100]}...")
+                self.stdout.write(data + "\n")  # Ensure newline termination
+                self.stdout.flush()  # Ensure immediate flushing
             else:
                 # Valid JSON but not a JSON-RPC message
-                logger.warning(f"Filtered non-RPC JSON: {data[:50]}...")
+                logger.warning(f"Filtered non-RPC JSON: {data[:100]}...")
         except json.JSONDecodeError:
             # Not valid JSON
-            logger.warning(f"Filtered invalid JSON: {data[:50]}...")
+            logger.warning(f"Filtered invalid JSON: {data[:100]}...")
     
     def flush(self):
         """Flush the underlying stdout."""

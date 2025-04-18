@@ -35,9 +35,14 @@ else
     exit 1
 fi
 
-# Create a debug log
+# Create a debug log with timestamp
 DEBUG_LOG="/tmp/mcp_bridge_$(date +%Y%m%d_%H%M%S).log"
 log_stderr "Logging debug output to $DEBUG_LOG"
+
+# Add a timestamp to log entries
+log_debug() {
+    echo "[$(date +%Y-%m-%d\ %H:%M:%S.%3N)] $1" >> "$DEBUG_LOG"
+}
 
 # Change to the improved directory
 cd /home/dell/coding/mcp/msfconsole/improved || {
@@ -54,6 +59,17 @@ log_stderr "Created JSON filter FIFO at $FIFO_PATH"
 cleanup() {
     log_stderr "Cleaning up resources..."
     rm -f "$FIFO_PATH"
+    
+    # Kill any background processes
+    if [ -n "$MCP_PID" ]; then
+        log_stderr "Terminating MCP process (PID: $MCP_PID)"
+        kill -TERM "$MCP_PID" 2>/dev/null || true
+    fi
+    
+    if [ -n "$FILTER_PID" ]; then
+        log_stderr "Terminating filter process (PID: $FILTER_PID)"
+        kill -TERM "$FILTER_PID" 2>/dev/null || true
+    fi
 }
 trap cleanup EXIT INT TERM
 
@@ -70,23 +86,26 @@ filter_valid_json() {
             continue
         fi
         
+        # Log the raw input for debugging
+        log_debug "Raw input: ${line:0:200}..."
+        
         # Test if line is valid JSON before passing it through
         if echo "$line" | "$PYTHON_PATH" -c "import sys,json; json.loads(sys.stdin.read())" &>/dev/null; then
             # Check if it's a valid JSON-RPC 2.0 message (contains jsonrpc field)
             if echo "$line" | "$PYTHON_PATH" -c "import sys,json; obj=json.loads(sys.stdin.read()); sys.exit(0 if 'jsonrpc' in obj and obj['jsonrpc'] == '2.0' else 1)" &>/dev/null; then
                 # Valid JSON-RPC message - output to stdout with added newline to ensure proper separation
                 echo "$line"
-                log_stderr "Passed valid JSON-RPC message: ${line:0:50}..."
-                echo "Passed valid JSON-RPC message: ${line:0:50}..." >> "$DEBUG_LOG"
+                log_stderr "Passed valid JSON-RPC message: ${line:0:100}..."
+                log_debug "Passed JSON-RPC: ${line}"
             else
                 # Valid JSON but not a JSON-RPC message
-                log_stderr "Filtered non-RPC JSON: ${line:0:50}..."
-                echo "Filtered non-RPC JSON: ${line:0:50}..." >> "$DEBUG_LOG"
+                log_stderr "Filtered non-RPC JSON: ${line:0:100}..."
+                log_debug "Filtered non-RPC JSON: ${line}"
             fi
         else
             # Not valid JSON - log to stderr
-            log_stderr "Filtered invalid JSON: ${line:0:50}..."
-            echo "Filtered invalid JSON: ${line:0:50}..." >> "$DEBUG_LOG"
+            log_stderr "Filtered invalid JSON: ${line:0:100}..."
+            log_debug "Filtered invalid JSON: ${line}"
         fi
     done
 }
@@ -98,17 +117,27 @@ export MCP_TRANSPORT=stdio
 export MCP_JSON_STDOUT=1
 export MCP_STRICT_MODE=1
 
+# Additional debugging settings
+export PYTHONUNBUFFERED=1  # Disable Python output buffering
+
+# Log the command we're about to run
+log_stderr "Launching Improved Metasploit MCP..."
+log_debug "Starting MCP with command: $PYTHON_PATH -u msfconsole_mcp_improved.py --json-stdout --strict-mode --debug-to-stderr"
+
 # Start the filter in background, reading from the FIFO
 cat "$FIFO_PATH" | filter_valid_json &
 FILTER_PID=$!
-
-log_stderr "Launching Improved Metasploit MCP..."
 
 # Execute with stdout to the FIFO (for filtering) and stderr directly to debug log
 "$PYTHON_PATH" -u msfconsole_mcp_improved.py \
     --json-stdout \
     --strict-mode \
-    --debug-to-stderr > "$FIFO_PATH" 2> >(tee -a "$DEBUG_LOG" >&2)
+    --debug-to-stderr > "$FIFO_PATH" 2> >(tee -a "$DEBUG_LOG" >&2) &
+
+MCP_PID=$!
+
+# Wait for the MCP process to complete
+wait $MCP_PID
 
 # Save exit code
 EXIT_CODE=$?

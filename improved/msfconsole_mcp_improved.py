@@ -240,6 +240,7 @@ class MetasploitProcess:
 
 # Import the MCPServer class from mcp_server.py
 from mcp_server import MCPServer
+from metasploit_process import MetasploitProcess
 
 # Main entry point
 async def main():
