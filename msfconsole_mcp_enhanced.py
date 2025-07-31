@@ -176,7 +176,15 @@ async def execute_msf_command(ctx: Context, command: str, workspace: str = "defa
             if len(command) > 1000:
                 command = command[:1000]
         
-        await ensure_initialized()
+        # Try initialization with timeout
+        try:
+            await asyncio.wait_for(ensure_initialized(), timeout=60)
+        except asyncio.TimeoutError:
+            return json.dumps({
+                "success": False,
+                "error": "Metasploit initialization timeout",
+                "message": "The Metasploit framework is taking too long to initialize. Please try again later."
+            }, indent=2)
         
         # Execute command with context
         context = {
@@ -224,7 +232,15 @@ async def search_modules(ctx: Context, query: str, module_type: str = "all") -> 
     await ctx.info(f"Searching modules: {query}")
     
     try:
-        await ensure_initialized()
+        # Try initialization with timeout
+        try:
+            await asyncio.wait_for(ensure_initialized(), timeout=60)
+        except asyncio.TimeoutError:
+            return json.dumps({
+                "success": False,
+                "error": "Metasploit initialization timeout",
+                "message": "The Metasploit framework is taking too long to initialize. Please try again later."
+            }, indent=2)
         
         # Build search command
         search_cmd = f"search {query}"
@@ -268,7 +284,15 @@ async def manage_workspaces(ctx: Context, action: str, workspace_name: str = "")
     await ctx.info(f"Managing workspace: {action}")
     
     try:
-        await ensure_initialized()
+        # Try initialization with timeout
+        try:
+            await asyncio.wait_for(ensure_initialized(), timeout=60)
+        except asyncio.TimeoutError:
+            return json.dumps({
+                "success": False,
+                "error": "Metasploit initialization timeout",
+                "message": "The Metasploit framework is taking too long to initialize. Please try again later."
+            }, indent=2)
         
         # Build workspace command
         if action == "list":
@@ -328,7 +352,15 @@ async def database_operations(ctx: Context, operation: str, filters: str = "") -
     await ctx.info(f"Database operation: {operation}")
     
     try:
-        await ensure_initialized()
+        # Try initialization with timeout
+        try:
+            await asyncio.wait_for(ensure_initialized(), timeout=60)
+        except asyncio.TimeoutError:
+            return json.dumps({
+                "success": False,
+                "error": "Metasploit initialization timeout",
+                "message": "The Metasploit framework is taking too long to initialize. Please try again later."
+            }, indent=2)
         
         # Build database command
         valid_operations = ["hosts", "services", "vulns", "creds", "loot", "notes", "sessions"]
@@ -391,7 +423,15 @@ async def session_management(ctx: Context, action: str, session_id: str = "", co
     await ctx.info(f"Session management: {action}")
     
     try:
-        await ensure_initialized()
+        # Try initialization with timeout
+        try:
+            await asyncio.wait_for(ensure_initialized(), timeout=60)
+        except asyncio.TimeoutError:
+            return json.dumps({
+                "success": False,
+                "error": "Metasploit initialization timeout",
+                "message": "The Metasploit framework is taking too long to initialize. Please try again later."
+            }, indent=2)
         
         # Build session command
         if action == "list":
@@ -557,7 +597,17 @@ async def payload_generation(ctx: Context, payload_type: str, options: Dict[str,
     await ctx.info(f"Generating payload: {payload_type}")
     
     try:
-        await ensure_initialized()
+        # Try initialization with timeout
+        try:
+            await asyncio.wait_for(ensure_initialized(), timeout=60)
+        except asyncio.TimeoutError:
+            return json.dumps({
+                "success": False,
+                "error": "Metasploit initialization timeout",
+                "payload_type": payload_type,
+                "message": "The Metasploit framework is taking too long to initialize. Please try again later."
+            }, indent=2)
+        
         options = options or {}
         
         # Build msfvenom command
@@ -609,7 +659,15 @@ async def resource_script_execution(ctx: Context, script_commands: List[str], wo
     await ctx.info(f"Executing resource script with {len(script_commands)} commands")
     
     try:
-        await ensure_initialized()
+        # Try initialization with timeout
+        try:
+            await asyncio.wait_for(ensure_initialized(), timeout=60)
+        except asyncio.TimeoutError:
+            return json.dumps({
+                "success": False,
+                "error": "Metasploit initialization timeout",
+                "message": "The Metasploit framework is taking too long to initialize. Please try again later."
+            }, indent=2)
         
         # Validate all commands
         validated_commands = []
