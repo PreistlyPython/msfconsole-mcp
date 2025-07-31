@@ -718,12 +718,17 @@ def _parse_search_results(output: str) -> List[Dict[str, str]]:
     
     for line in lines:
         line = line.strip()
-        if not line or line.startswith('#') or '===' in line:
+        if not line or line.startswith('#') or '===' in line or 'Matching Modules' in line:
             continue
         
-        # Try to parse module line
-        parts = line.split(None, 2)
-        if len(parts) >= 3:
+        # Skip header lines and separators
+        if line.startswith('Name') or line.startswith('----') or line.startswith('='):
+            continue
+            
+        # Try to parse module line - typical format:
+        # module_name    disclosure_date    rank    description
+        parts = line.split(None, 3)  # Split into max 4 parts
+        if len(parts) >= 1:
             modules.append({
                 "name": parts[0],
                 "disclosure_date": parts[1] if len(parts) > 1 else "",
@@ -740,15 +745,18 @@ def _parse_workspace_list(output: str) -> List[Dict[str, str]]:
     
     for line in lines:
         line = line.strip()
-        if line and not line.startswith('*') and line != 'Workspaces':
-            # Current workspace is marked with *
-            current = line.startswith('*')
-            name = line.lstrip('* ').strip()
-            if name:
-                workspaces.append({
-                    "name": name,
-                    "current": current
-                })
+        # Skip empty lines and headers
+        if not line or line == 'Workspaces' or line.startswith('='):
+            continue
+            
+        # Current workspace is marked with *
+        current = line.startswith('*')
+        name = line.lstrip('* ').strip()
+        if name:
+            workspaces.append({
+                "name": name,
+                "current": current
+            })
     
     return workspaces
 
