@@ -1,0 +1,6 @@
+{
+  "improved_parsing": false,
+  "module_search_parsing": true,
+  "module_operations_fix": true,
+  "payload_generation_fix": true
+}

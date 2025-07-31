@@ -196,17 +196,42 @@ async def execute_msf_command(ctx: Context, command: str, workspace: str = "defa
         
         await ctx.info(f"Command executed successfully using {result.mode_used} mode")
         
-        return json.dumps({
+        # Use improved parser for better output structure
+        parsed_result = msf_parser.parse(result.output)
+        
+        response_data = {
             "success": result.success,
-            "output": result.output,
-            "error": result.error,
+            "command": command,
             "execution_details": {
                 "mode_used": result.mode_used,
                 "execution_time": result.execution_time,
                 "workspace": workspace
             },
             "metadata": result.metadata or {}
-        }, indent=2)
+        }
+        
+        # Add parsed or raw output based on parsing success
+        if parsed_result.success and parsed_result.output_type != OutputType.RAW:
+            response_data["parsed_output"] = {
+                "type": parsed_result.output_type.value,
+                "data": parsed_result.data,
+                "metadata": parsed_result.metadata
+            }
+            # Keep raw output for reference when parsed successfully
+            response_data["raw_output"] = result.output
+        else:
+            # Use raw output when parsing fails
+            response_data["output"] = result.output
+            if parsed_result.error_message:
+                response_data["parsing_info"] = {
+                    "attempted": True,
+                    "error": parsed_result.error_message
+                }
+        
+        if result.error:
+            response_data["error"] = result.error
+        
+        return json.dumps(response_data, indent=2)
         
     except Exception as e:
         logger.error(f"Error executing command: {e}")
@@ -249,17 +274,30 @@ async def search_modules(ctx: Context, query: str, module_type: str = "all") -> 
         
         result = await dual_mode_handler.execute_command(search_cmd)
         
-        # Parse results for better formatting
-        parsed_modules = _parse_search_results(result.output)
+        # Use improved parser for better formatting
+        parsed_result = msf_parser.parse(result.output)
         
-        return json.dumps({
-            "success": result.success,
-            "query": query,
-            "module_type": module_type,
-            "results_count": len(parsed_modules),
-            "modules": parsed_modules,
-            "raw_output": result.output if not parsed_modules else None
-        }, indent=2)
+        if parsed_result.success and parsed_result.output_type == OutputType.TABLE:
+            return json.dumps({
+                "success": True,
+                "query": query,
+                "module_type": module_type,
+                "results_count": len(parsed_result.data),
+                "modules": parsed_result.data,
+                "parsing_metadata": parsed_result.metadata
+            }, indent=2)
+        else:
+            # Fallback to legacy parsing or raw output
+            parsed_modules = _parse_search_results(result.output)
+            return json.dumps({
+                "success": result.success,
+                "query": query,
+                "module_type": module_type,
+                "results_count": len(parsed_modules),
+                "modules": parsed_modules,
+                "raw_output": result.output,
+                "parsing_error": parsed_result.error_message
+            }, indent=2)
         
     except Exception as e:
         logger.error(f"Error searching modules: {e}")
@@ -514,11 +552,13 @@ async def module_operations(ctx: Context, action: str, module_path: str = "", op
         options = options or {}
         
         if action == "info" and module_path:
-            command = f"use {module_path}; info"
+            # Use direct info command which is more reliable
+            command = f"info {module_path}"
         elif action == "use" and module_path:
             command = f"use {module_path}"
         elif action == "options" and module_path:
-            command = f"use {module_path}; options"
+            # Show options for a specific module
+            command = f"use {module_path}; show options"
         elif action == "set" and module_path and options:
             commands = [f"use {module_path}"]
             for key, value in options.items():
@@ -610,30 +650,116 @@ async def payload_generation(ctx: Context, payload_type: str, options: Dict[str,
         
         options = options or {}
         
-        # Build msfvenom command
-        command_parts = ["msfvenom", "-p", payload_type]
+        # Try different approaches for payload generation
+        approaches = [
+            # Approach 1: Use generate command in msfconsole (if available)
+            {
+                "method": "generate_command",
+                "command": f"use payload/{payload_type}",
+                "description": "Using MSF console generate command"
+            },
+            # Approach 2: Use external msfvenom via subprocess  
+            {
+                "method": "external_msfvenom",
+                "command": None,  # Will be handled separately
+                "description": "Using external msfvenom command"
+            }
+        ]
         
-        # Add options
-        for key, value in options.items():
-            command_parts.extend([f"{key}={value}"])
+        result = None
+        final_approach = None
         
-        # Add output format
-        if output_format != "raw":
-            command_parts.extend(["-f", output_format])
+        # Try approach 1: MSF console generate command
+        try:
+            # Set up payload module
+            setup_commands = [
+                f"use payload/{payload_type}"
+            ]
+            
+            # Set payload options
+            for key, value in options.items():
+                setup_commands.append(f"set {key} {value}")
+            
+            # Generate payload
+            setup_commands.append("generate")
+            
+            # Execute as batch
+            batch_result = await dual_mode_handler.execute_batch_commands(setup_commands)
+            
+            if batch_result and any(r.success for r in batch_result):
+                # Find the generate result
+                generate_result = None
+                for r in batch_result:
+                    if "generate" in r.output.lower() or len(r.output) > 100:  # Payload output is usually long
+                        generate_result = r
+                        break
+                
+                if generate_result:
+                    result = generate_result
+                    final_approach = approaches[0]
+                    
+        except Exception as e:
+            logger.warning(f"MSF console generate failed: {e}")
         
-        # Execute msfvenom (this will use resource script mode typically)
-        msfvenom_command = " ".join(command_parts)
-        result = await dual_mode_handler.execute_command(f"!{msfvenom_command}")
+        # Try approach 2: External msfvenom if console approach failed
+        if not result:
+            try:
+                import subprocess
+                
+                # Build msfvenom command for external execution
+                command_parts = ["msfvenom", "-p", payload_type]
+                
+                # Add options
+                for key, value in options.items():
+                    command_parts.append(f"{key}={value}")
+                
+                # Add output format
+                if output_format != "raw":
+                    command_parts.extend(["-f", output_format])
+                
+                # Execute msfvenom externally
+                msfvenom_command = " ".join(command_parts)
+                proc_result = subprocess.run(
+                    command_parts,
+                    capture_output=True,
+                    text=True,
+                    timeout=60
+                )
+                
+                # Create result-like object
+                class ExternalResult:
+                    def __init__(self, success, output, error):
+                        self.success = success
+                        self.output = output
+                        self.error = error
+                        self.execution_time = 0
+                        self.mode_used = "external_subprocess"
+                
+                result = ExternalResult(
+                    success=proc_result.returncode == 0,
+                    output=proc_result.stdout,
+                    error=proc_result.stderr
+                )
+                final_approach = approaches[1]
+                
+            except Exception as e:
+                logger.error(f"External msfvenom failed: {e}")
+                return json.dumps({
+                    "success": False,
+                    "error": f"All payload generation methods failed. Console error: MSF generate not available. External error: {str(e)}",
+                    "payload_type": payload_type,
+                    "approaches_tried": [a["description"] for a in approaches]
+                }, indent=2)
         
         return json.dumps({
-            "success": result.success,
+            "success": result.success if result else False,
             "payload_type": payload_type,
             "options": options,
             "output_format": output_format,
-            "command_used": msfvenom_command,
-            "output": result.output,
-            "error": result.error,
-            "execution_time": result.execution_time
+            "method_used": final_approach["description"] if final_approach else "Unknown",
+            "output": result.output if result else "",
+            "error": result.error if result else "No successful generation method",
+            "execution_time": getattr(result, 'execution_time', 0) if result else 0
         }, indent=2)
         
     except Exception as e:
@@ -709,7 +835,13 @@ async def resource_script_execution(ctx: Context, script_commands: List[str], wo
             "commands": script_commands
         }, indent=2)
 
-# Parsing helper functions
+# Import improved parser
+from improved_msf_parser import ImprovedMSFParser, OutputType
+
+# Initialize global parser
+msf_parser = ImprovedMSFParser()
+
+# Legacy parsing helper functions (keeping for compatibility)
 
 def _parse_search_results(output: str) -> List[Dict[str, str]]:
     """Parse module search results."""
