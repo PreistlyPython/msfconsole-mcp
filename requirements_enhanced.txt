@@ -1,0 +1,26 @@
+# Enhanced MSF MCP Requirements
+# Core MCP SDK
+mcp>=0.4.0
+
+# Async HTTP client for RPC
+aiohttp>=3.8.0
+aiofiles>=23.0.0
+
+# Configuration management
+PyYAML>=6.0
+
+# Performance monitoring
+psutil>=5.9.0
+
+# Security and validation
+cryptography>=41.0.0
+
+# Logging and utilities
+python-json-logger>=2.0.0
+
+# Data handling
+msgpack>=1.0.0
+
+# Optional: For advanced features
+# redis>=4.5.0  # For distributed caching
+# prometheus-client>=0.16.0  # For metrics export

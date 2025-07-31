@@ -1,0 +1,64 @@
+custom_settings:
+  example_setting: example_value
+  feature_flags:
+    advanced_logging: true
+    experimental_features: false
+environment: development
+logging:
+  audit_log_enabled: true
+  audit_log_path: msf_security_audit.log
+  backup_count: 5
+  file_path: msfconsole_mcp_enhanced.log
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  level: INFO
+  max_file_size_mb: 100
+paths:
+  msfconsole: /usr/bin/msfconsole
+  msfrpcd: /usr/bin/msfrpcd
+  msfvenom: /usr/bin/msfvenom
+  resource_scripts_directory: /tmp/msf_scripts
+  workspace_directory: /tmp/msf_workspaces
+performance:
+  async_operations: true
+  batch_processing: true
+  cache_enabled: true
+  cache_max_size: 1000
+  cache_ttl: 300
+  compression_enabled: true
+  connection_pooling: true
+  max_batch_size: 50
+  memory_limit_mb: 512
+  result_streaming: true
+rpc:
+  connection_pool_size: 10
+  enable_compression: true
+  host: 127.0.0.1
+  max_retries: 3
+  password: msf123
+  port: 55552
+  retry_delay: 5
+  ssl: false
+  timeout: 30
+  username: msf
+security:
+  allowed_modules:
+  - auxiliary/
+  - exploit/
+  - payload/
+  - encoder/
+  - nop/
+  - post/
+  blocked_keywords:
+  - rm -rf
+  - format
+  - fdisk
+  - dd if=
+  - shutdown
+  - reboot
+  command_timeout: 120
+  enable_audit_logging: true
+  enable_threat_detection: true
+  max_command_length: 1000
+  max_concurrent_sessions: 10
+  require_workspace_isolation: true
+  session_timeout: 3600
