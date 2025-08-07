@@ -52,6 +52,40 @@ except ImportError as e:
 VERSION = "2.0.0"
 mcp = FastMCP("msfconsole-enhanced", version=VERSION)
 
+# Enhanced timeout configuration for execute_msf_command
+COMMAND_TIMEOUTS = {
+    # Fast commands - basic status and help
+    "help": 45,
+    "db_status": 30,
+    "workspace": 30,
+    
+    # Medium commands - information retrieval
+    "version": 75,
+    "show": 60,
+    "info": 75,
+    
+    # Complex commands - operations and searches
+    "search": 90,
+    "use": 90,
+    "exploit": 120,
+    "generate": 90,
+    
+    # Default for unknown commands
+    "default": 75
+}
+
+def get_adaptive_timeout(command: str) -> int:
+    """Get adaptive timeout based on command type"""
+    command_lower = command.lower().strip()
+    
+    # Check for specific command patterns
+    for pattern, timeout in COMMAND_TIMEOUTS.items():
+        if pattern in command_lower:
+            return timeout
+    
+    # Default timeout
+    return COMMAND_TIMEOUTS["default"]
+
 # Global dual-mode handler
 dual_mode_handler: Optional[MSFDualModeHandler] = None
 
@@ -144,19 +178,23 @@ async def get_msf_status(ctx: Context) -> str:
         }, indent=2)
 
 @mcp.tool()
-async def execute_msf_command(ctx: Context, command: str, workspace: str = "default", timeout: int = 120) -> str:
+async def execute_msf_command(ctx: Context, command: str, workspace: str = "default", timeout: int = None) -> str:
     """
-    Execute a Metasploit Framework command with enhanced security and dual-mode support.
+    Execute a Metasploit Framework command with enhanced security and adaptive timeout.
     
     Args:
         command: The MSF command to execute (e.g., 'hosts', 'search ms17_010')
         workspace: Metasploit workspace to use (default: 'default')
-        timeout: Command timeout in seconds (default: 120)
+        timeout: Command timeout in seconds (auto-detected based on command type if None)
     
     Returns:
         JSON formatted result with output, execution details, and metadata
     """
-    await ctx.info(f"Executing MSF command: {command[:50]}...")
+    # Use adaptive timeout if not specified
+    if timeout is None:
+        timeout = get_adaptive_timeout(command)
+    
+    await ctx.info(f"Executing MSF command: {command[:50]}... (timeout: {timeout}s)")
     
     try:
         # Security validation
