@@ -106,23 +106,26 @@ class MSFConsoleMCPServer:
             },
             {
                 "name": "msf_search_modules",
-                "description": "Search for MSF modules with pagination support",
+                "description": "Search for MSF modules with pagination support and automatic token management",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Search query (e.g., 'exploit platform:windows')"
+                            "description": "Search query (e.g., 'exploit platform:windows'). Use specific terms to reduce results."
                         },
                         "limit": {
                             "type": "number",
-                            "description": "Maximum number of results per page",
-                            "default": 25
+                            "description": "Maximum number of results per page (automatically reduced if needed to fit token limits)",
+                            "default": 10,
+                            "minimum": 1,
+                            "maximum": 50
                         },
                         "page": {
                             "type": "number",
                             "description": "Page number (1-based)",
-                            "default": 1
+                            "default": 1,
+                            "minimum": 1
                         }
                     },
                     "required": ["query"]
