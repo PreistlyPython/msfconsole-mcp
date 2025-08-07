@@ -19,7 +19,6 @@ from dataclasses import asdict
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from msf_stable_integration import MSFConsoleStableWrapper, OperationStatus, OperationResult
-from msf_extended_tools import MSFExtendedTools, ExtendedOperationResult
 
 # Set up logging
 logging.basicConfig(
@@ -33,37 +32,26 @@ class MSFConsoleMCPServer:
     
     def __init__(self):
         self.msf = MSFConsoleStableWrapper()
-        self.extended_msf = MSFExtendedTools()
         self.initialized = False
         self.server_info = {
             "name": "msfconsole-stable",
-            "version": "2.0.0",
-            "description": "Production-ready MSFConsole MCP server with 95% coverage (23 tools)",
-            "tools_count": 23,
-            "coverage": "95%"
+            "version": "1.0.0",
+            "description": "Production-ready MSFConsole MCP server with 100% reliability"
         }
     
     async def initialize(self):
-        """Initialize both standard and extended MSFConsole integrations."""
+        """Initialize the MSFConsole integration."""
         if not self.initialized:
-            logger.info("Initializing MSFConsole MCP server with extended tools...")
-            
-            # Initialize standard wrapper
+            logger.info("Initializing MSFConsole MCP server...")
             result = await self.msf.initialize()
-            if result.status != OperationStatus.SUCCESS:
-                logger.error(f"Standard MSFConsole initialization failed: {result.error}")
-                return False
+            self.initialized = result.status == OperationStatus.SUCCESS
             
-            # Initialize extended wrapper
-            extended_result = await self.extended_msf.initialize()
-            if extended_result.status != OperationStatus.SUCCESS:
-                logger.error(f"Extended MSFConsole initialization failed: {extended_result.error}")
-                return False
+            if self.initialized:
+                logger.info("MSFConsole MCP server initialized successfully")
+            else:
+                logger.error(f"MSFConsole initialization failed: {result.error}")
             
-            self.initialized = True
-            logger.info("MSFConsole MCP server with extended tools initialized successfully (23 tools)")
-            return True
-            
+            return self.initialized
         return True
     
     def get_available_tools(self) -> List[Dict[str, Any]]:
@@ -197,234 +185,6 @@ class MSFConsoleMCPServer:
                     "properties": {},
                     "additionalProperties": False
                 }
-            },
-            # Extended Tools (15 new tools)
-            {
-                "name": "msf_module_manager",
-                "description": "Complete module lifecycle management including loading, configuration, and execution",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["load", "configure", "validate", "execute", "reload", "info"], "description": "Module management action"},
-                        "module_path": {"type": "string", "description": "Full module path"},
-                        "options": {"type": "object", "description": "Module options", "additionalProperties": {"type": "string"}},
-                        "advanced_options": {"type": "object", "description": "Advanced/evasion options", "additionalProperties": {"type": "string"}},
-                        "timeout": {"type": "number", "description": "Optional adaptive timeout"}
-                    },
-                    "required": ["action", "module_path"]
-                }
-            },
-            {
-                "name": "msf_session_interact",
-                "description": "Advanced session interaction with command execution and file operations",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "session_id": {"type": "string", "description": "Target session ID"},
-                        "action": {"type": "string", "enum": ["shell", "execute", "upload", "download", "screenshot", "migrate"], "description": "Session interaction action"},
-                        "command": {"type": "string", "description": "Command to execute (for execute action)"},
-                        "source_path": {"type": "string", "description": "Source file path (for upload/download)"},
-                        "target_path": {"type": "string", "description": "Target file path (for upload/download)"},
-                        "process_id": {"type": "integer", "description": "Process ID (for migrate action)"},
-                        "timeout": {"type": "number", "description": "Optional timeout"}
-                    },
-                    "required": ["session_id", "action"]
-                }
-            },
-            {
-                "name": "msf_database_query",
-                "description": "Advanced database operations for data persistence and analysis",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "operation": {"type": "string", "enum": ["query", "export", "import", "analyze", "backup", "restore"], "description": "Database operation type"},
-                        "query": {"type": "string", "description": "SQL query (for query operation)"},
-                        "format": {"type": "string", "enum": ["json", "csv", "xml", "yaml"], "default": "json", "description": "Output format"},
-                        "file_path": {"type": "string", "description": "File path (for import/export/backup/restore)"},
-                        "filters": {"type": "object", "description": "Query filters", "additionalProperties": True},
-                        "pagination": {"type": "object", "description": "Pagination settings", "properties": {"page": {"type": "integer"}, "limit": {"type": "integer"}}}
-                    },
-                    "required": ["operation"]
-                }
-            },
-            {
-                "name": "msf_exploit_chain",
-                "description": "Automate complex multi-stage exploitation workflows",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["create", "add_step", "configure", "validate", "execute", "monitor"], "description": "Chain operation"},
-                        "chain_name": {"type": "string", "description": "Exploitation chain name"},
-                        "step_config": {"type": "object", "description": "Step configuration", "additionalProperties": True},
-                        "execution_mode": {"type": "string", "enum": ["sequential", "parallel", "conditional"], "default": "sequential"},
-                        "rollback_on_failure": {"type": "boolean", "default": True}
-                    },
-                    "required": ["action", "chain_name"]
-                }
-            },
-            {
-                "name": "msf_post_exploitation",
-                "description": "Comprehensive post-exploitation module management",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "category": {"type": "string", "enum": ["enumerate", "gather", "persist", "escalate", "lateral", "cleanup"], "description": "Post-exploitation category"},
-                        "module_name": {"type": "string", "description": "Module name"},
-                        "session_id": {"type": "string", "description": "Target session ID"},
-                        "options": {"type": "object", "description": "Module options", "additionalProperties": {"type": "string"}},
-                        "stealth_mode": {"type": "boolean", "default": False}
-                    },
-                    "required": ["category", "module_name", "session_id"]
-                }
-            },
-            {
-                "name": "msf_handler_manager",
-                "description": "Payload handler lifecycle management",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["create", "start", "stop", "list", "monitor", "auto_migrate"], "description": "Handler action"},
-                        "handler_name": {"type": "string", "description": "Handler identifier"},
-                        "payload_type": {"type": "string", "description": "Payload type (e.g., windows/meterpreter/reverse_tcp)"},
-                        "options": {"type": "object", "description": "Handler options", "additionalProperties": {"type": "string"}},
-                        "auto_options": {"type": "object", "description": "Auto-migration options", "additionalProperties": True}
-                    },
-                    "required": ["action", "handler_name"]
-                }
-            },
-            {
-                "name": "msf_scanner_suite",
-                "description": "Comprehensive scanning and discovery operations",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "scanner_type": {"type": "string", "enum": ["network", "service", "vulnerability", "credential", "web", "custom"], "description": "Scanner category"},
-                        "targets": {"type": ["string", "array"], "description": "Target hosts or networks"},
-                        "options": {"type": "object", "description": "Scanner options", "additionalProperties": {"type": "string"}},
-                        "threads": {"type": "integer", "default": 10, "description": "Number of threads"},
-                        "output_format": {"type": "string", "enum": ["table", "json", "csv"], "default": "table"}
-                    },
-                    "required": ["scanner_type", "targets"]
-                }
-            },
-            {
-                "name": "msf_credential_manager",
-                "description": "Centralized credential management and usage",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["add", "list", "test", "spray", "export", "import"], "description": "Credential action"},
-                        "credential_data": {"type": "object", "description": "Credential information", "additionalProperties": True},
-                        "filters": {"type": "object", "description": "Filter criteria", "additionalProperties": {"type": "string"}},
-                        "targets": {"type": "array", "items": {"type": "string"}, "description": "Target hosts"},
-                        "format": {"type": "string", "enum": ["json", "csv", "xml"], "default": "json"}
-                    },
-                    "required": ["action"]
-                }
-            },
-            {
-                "name": "msf_pivot_manager",
-                "description": "Network pivoting and routing management",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["add_route", "remove_route", "list_routes", "setup_proxy", "port_forward", "auto_route"], "description": "Pivot operation"},
-                        "session_id": {"type": "string", "description": "Session for pivoting"},
-                        "network": {"type": "string", "description": "Target network (CIDR)"},
-                        "options": {"type": "object", "description": "Pivot options", "additionalProperties": True}
-                    },
-                    "required": ["action"]
-                }
-            },
-            {
-                "name": "msf_resource_executor",
-                "description": "Resource script execution and management",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["execute", "validate", "create", "list", "schedule", "monitor"], "description": "Resource action"},
-                        "script_path": {"type": "string", "description": "Path to resource script"},
-                        "script_content": {"type": "string", "description": "Script content (for create action)"},
-                        "variables": {"type": "object", "description": "Script variables", "additionalProperties": {"type": "string"}},
-                        "schedule_config": {"type": "object", "description": "Scheduling configuration", "additionalProperties": True}
-                    },
-                    "required": ["action"]
-                }
-            },
-            {
-                "name": "msf_loot_collector",
-                "description": "Automated loot collection and organization",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["collect", "organize", "search", "export", "analyze", "tag"], "description": "Loot action"},
-                        "session_id": {"type": "string", "description": "Source session"},
-                        "loot_type": {"type": "string", "description": "Type of loot to collect"},
-                        "filters": {"type": "object", "description": "Search/filter criteria", "additionalProperties": True},
-                        "tags": {"type": "array", "items": {"type": "string"}, "description": "Loot tags"}
-                    },
-                    "required": ["action"]
-                }
-            },
-            {
-                "name": "msf_vulnerability_tracker",
-                "description": "Vulnerability tracking and management",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["add", "update", "search", "report", "correlate", "prioritize"], "description": "Vulnerability action"},
-                        "vulnerability_data": {"type": "object", "description": "Vulnerability information", "additionalProperties": True},
-                        "filters": {"type": "object", "description": "Search filters", "additionalProperties": {"type": "string"}},
-                        "report_format": {"type": "string", "enum": ["json", "pdf", "html", "csv"], "default": "json"},
-                        "correlation_depth": {"type": "integer", "default": 1}
-                    },
-                    "required": ["action"]
-                }
-            },
-            {
-                "name": "msf_reporting_engine",
-                "description": "Comprehensive reporting and documentation",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "report_type": {"type": "string", "enum": ["executive", "technical", "compliance", "pentest", "incident", "custom"], "description": "Report type"},
-                        "workspace": {"type": "string", "description": "Source workspace"},
-                        "filters": {"type": "object", "description": "Data filters", "additionalProperties": True},
-                        "template": {"type": "string", "description": "Report template"},
-                        "output_format": {"type": "string", "enum": ["pdf", "html", "docx", "markdown"], "default": "pdf"},
-                        "include_evidence": {"type": "boolean", "default": True}
-                    },
-                    "required": ["report_type", "workspace"]
-                }
-            },
-            {
-                "name": "msf_automation_builder",
-                "description": "Visual workflow automation and playbook creation",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["create_workflow", "add_node", "connect_nodes", "validate", "execute", "export"], "description": "Automation action"},
-                        "workflow_name": {"type": "string", "description": "Workflow identifier"},
-                        "node_config": {"type": "object", "description": "Node configuration", "additionalProperties": True},
-                        "connections": {"type": "array", "items": {"type": "object"}, "description": "Node connections"},
-                        "execution_params": {"type": "object", "description": "Execution parameters", "additionalProperties": True}
-                    },
-                    "required": ["action", "workflow_name"]
-                }
-            },
-            {
-                "name": "msf_plugin_manager",
-                "description": "Plugin and extension management",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "string", "enum": ["list", "load", "unload", "configure", "status", "update"], "description": "Plugin action"},
-                        "plugin_name": {"type": "string", "description": "Plugin name"},
-                        "config": {"type": "object", "description": "Plugin configuration", "additionalProperties": True},
-                        "auto_load": {"type": "boolean", "default": False}
-                    },
-                    "required": ["action"]
-                }
             }
         ]
     
@@ -452,19 +212,12 @@ class MSFConsoleMCPServer:
                 return await self._handle_switch_workspace(arguments)
             elif tool_name == "msf_list_sessions":
                 return await self._handle_list_sessions(arguments)
-            # Extended tools (15 new tools)
-            elif tool_name in ["msf_module_manager", "msf_session_interact", "msf_database_query",
-                             "msf_exploit_chain", "msf_post_exploitation", "msf_handler_manager",
-                             "msf_scanner_suite", "msf_credential_manager", "msf_pivot_manager",
-                             "msf_resource_executor", "msf_loot_collector", "msf_vulnerability_tracker",
-                             "msf_reporting_engine", "msf_automation_builder", "msf_plugin_manager"]:
-                return await self._handle_extended_tool(tool_name, arguments)
             else:
                 return {
                     "content": [
                         {
                             "type": "text",
-                            "text": f"Error: Unknown tool '{tool_name}' (Available: 23 tools total)"
+                            "text": f"Error: Unknown tool '{tool_name}'"
                         }
                     ]
                 }
@@ -653,52 +406,10 @@ class MSFConsoleMCPServer:
             ]
         }
     
-    async def _handle_extended_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
-        """Handle extended 15 tools using extended wrapper."""
-        try:
-            # Map tool names to methods
-            method_name = tool_name  # Direct mapping since names match
-            method = getattr(self.extended_msf, method_name)
-            
-            # Call the method with arguments
-            result = await method(**arguments)
-            
-            return self._format_extended_result(result)
-        
-        except AttributeError:
-            return {"content": [{"type": "text", "text": f"Extended tool method not found: {tool_name}"}]}
-        except Exception as e:
-            logger.error(f"Extended tool error {tool_name}: {e}")
-            return {"content": [{"type": "text", "text": f"Extended tool error: {str(e)}"}]}
-    
-    def _format_extended_result(self, result: ExtendedOperationResult) -> Dict[str, Any]:
-        """Format extended operation result for MCP response."""
-        response_data = {
-            "status": result.status.value,
-            "execution_time": result.execution_time,
-            "success": result.status == OperationStatus.SUCCESS,
-            "data": result.data,
-            "error": result.error
-        }
-        
-        # Add extended fields if available
-        if hasattr(result, 'metadata') and result.metadata:
-            response_data["metadata"] = result.metadata
-        
-        if hasattr(result, 'warnings') and result.warnings:
-            response_data["warnings"] = result.warnings
-        
-        if hasattr(result, 'suggestions') and result.suggestions:
-            response_data["suggestions"] = result.suggestions
-        
-        return {"content": [{"type": "text", "text": json.dumps(response_data, indent=2)}]}
-    
     async def cleanup(self):
         """Clean up resources."""
         if self.msf:
             await self.msf.cleanup()
-        if self.extended_msf:
-            await self.extended_msf.cleanup()
 
 # MCP Protocol Implementation
 async def handle_mcp_request(request: Dict[str, Any], server: MSFConsoleMCPServer) -> Dict[str, Any]:
