@@ -102,11 +102,16 @@ class MCPServer:
         from metasploit_process import MetasploitProcess
         self.msf = MetasploitProcess()
         try:
-            # Start Metasploit with explicit error handling
-            await self.msf.start()
+            # Start Metasploit with explicit error handling and timeout
+            await asyncio.wait_for(self.msf.start(), timeout=20)
             logger.info("Metasploit process started successfully")
             
             # Start processing JSON-RPC requests
+            await self._process_requests()
+        except asyncio.TimeoutError:
+            logger.error("Metasploit initialization timed out after 20 seconds")
+            # Try to continue with limited functionality
+            logger.warning("Continuing with limited functionality - some tools may not work")
             await self._process_requests()
         except Exception as e:
             logger.error(f"Failed to start MCP server: {e}")
@@ -545,14 +550,82 @@ class MCPServer:
             raise
 
     async def _tool_generate_payload(self, payload: str, options: str = '') -> Dict[str, Any]:
-        """Generate a payload using msfvenom."""
+        """Generate a payload using enhanced payload generation with comprehensive error handling."""
         if not payload:
             return {'error': 'No payload specified'}
         
         try:
-            # Using msfvenom via the MSF console
+            # Try to import and use the enhanced payload fix
+            try:
+                from msf_payload_fix import MSFPayloadFix
+                
+                # Initialize payload fix if not already done
+                if not hasattr(self, '_payload_fix'):
+                    self._payload_fix = MSFPayloadFix()
+                    await self._payload_fix.initialize()
+                
+                # Parse options string into dictionary
+                options_dict = {}
+                if options:
+                    option_pairs = options.split()
+                    for option in option_pairs:
+                        if '=' in option:
+                            key, value = option.split('=', 1)
+                            options_dict[key] = value
+                
+                # Generate payload with enhanced error handling
+                result = await self._payload_fix.generate_payload_fixed(
+                    payload=payload,
+                    options=options_dict,
+                    output_format="raw"
+                )
+                
+                # Return standardized response
+                if result.get('success'):
+                    return {
+                        'payload': payload,
+                        'options': options if options else None,
+                        'output': result.get('output', ''),
+                        'method': result.get('method', 'unknown'),
+                        'size': result.get('size', 0),
+                        'format': result.get('format', 'raw'),
+                        'success': True
+                    }
+                else:
+                    return {
+                        'error': result.get('error', 'Payload generation failed'),
+                        'payload': payload,
+                        'success': False,
+                        'method': result.get('method', 'unknown')
+                    }
+            
+            except ImportError:
+                # Fallback to original method if fix not available
+                logger.warning("MSFPayloadFix not available, using fallback method")
+                return await self._tool_generate_payload_fallback(payload, options)
+                
+        except Exception as e:
+            logger.error(f'Error generating payload: {e}')
+            return {
+                'error': str(e),
+                'payload': payload,
+                'success': False
+            }
+    
+    async def _tool_generate_payload_fallback(self, payload: str, options: str = '') -> Dict[str, Any]:
+        """Fallback payload generation method with improved error handling."""
+        try:
+            # Using msfvenom via the MSF console with better error handling
             command = f'use payload/{payload}'
-            await self.msf.execute_command(command)
+            use_output = await self.msf.execute_command(command)
+            
+            # Check if payload was loaded successfully
+            if 'Invalid module' in use_output or 'not found' in use_output:
+                return {
+                    'error': f'Invalid payload: {payload}',
+                    'payload': payload,
+                    'success': False
+                }
             
             # Set options and generate
             if options:
@@ -560,19 +633,51 @@ class MCPServer:
                 for option in option_pairs:
                     if '=' in option:
                         key, value = option.split('=', 1)
-                        await self.msf.execute_command(f'set {key} {value}')
+                        # Escape special characters in values
+                        clean_value = value.replace('"', '\\"').replace("'", "\\'")
+                        set_output = await self.msf.execute_command(f'set {key} "{clean_value}"')
+                        
+                        # Check if option was set successfully
+                        if 'Unknown option' in set_output or 'Invalid' in set_output:
+                            logger.warning(f'Failed to set option {key}={value}: {set_output}')
             
-            # Generate the payload
-            output = await self.msf.execute_command('generate')
-            
-            return {
-                'payload': payload,
-                'options': options if options else None,
-                'output': output
-            }
+            # Generate the payload with timeout
+            try:
+                output = await asyncio.wait_for(
+                    self.msf.execute_command('generate'),
+                    timeout=60  # 1 minute timeout
+                )
+                
+                # Check if generation was successful
+                if 'Error' in output or 'Failed' in output:
+                    return {
+                        'error': f'Payload generation failed: {output}',
+                        'payload': payload,
+                        'success': False
+                    }
+                
+                return {
+                    'payload': payload,
+                    'options': options if options else None,
+                    'output': output,
+                    'success': True,
+                    'method': 'fallback_console'
+                }
+                
+            except asyncio.TimeoutError:
+                return {
+                    'error': 'Payload generation timed out',
+                    'payload': payload,
+                    'success': False
+                }
+                
         except Exception as e:
-            logger.error(f'Error generating payload: {e}')
-            raise
+            logger.error(f'Error in fallback payload generation: {e}')
+            return {
+                'error': str(e),
+                'payload': payload,
+                'success': False
+            }
 
     async def _tool_show_module_info(self, module_path: str) -> Dict[str, Any]:
         """Show detailed information about a Metasploit module."""

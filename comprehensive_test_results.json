@@ -1,0 +1,73 @@
+{
+  "test_timestamp": "2025-08-06T20:21:47.053700",
+  "total_tools": 9,
+  "successful_tools": 8,
+  "failed_tools": 1,
+  "success_rate": 0.8888888888888888,
+  "average_response_time": 21.84385859966278,
+  "tool_results": [
+    {
+      "tool": "get_msf_status",
+      "success": true,
+      "execution_time": 0.010233640670776367,
+      "parsing_quality": "unknown_format",
+      "error": null
+    },
+    {
+      "tool": "execute_msf_command",
+      "success": false,
+      "execution_time": 45,
+      "parsing_quality": "timeout",
+      "error": "Tool response timeout after 45s. Notifications received: 1"
+    },
+    {
+      "tool": "search_modules",
+      "success": true,
+      "execution_time": 30.82551622390747,
+      "parsing_quality": "good_structured",
+      "error": null
+    },
+    {
+      "tool": "manage_workspaces",
+      "success": true,
+      "execution_time": 13.674686908721924,
+      "parsing_quality": "good_structured",
+      "error": null
+    },
+    {
+      "tool": "database_operations",
+      "success": true,
+      "execution_time": 16.141995191574097,
+      "parsing_quality": "minimal_data",
+      "error": null
+    },
+    {
+      "tool": "session_management",
+      "success": true,
+      "execution_time": 28.24034309387207,
+      "parsing_quality": "good_structured",
+      "error": null
+    },
+    {
+      "tool": "module_operations",
+      "success": true,
+      "execution_time": 27.983601093292236,
+      "parsing_quality": "basic_functional",
+      "error": null
+    },
+    {
+      "tool": "payload_generation",
+      "success": true,
+      "execution_time": 19.365286588668823,
+      "parsing_quality": "basic_functional",
+      "error": null
+    },
+    {
+      "tool": "resource_script_execution",
+      "success": true,
+      "execution_time": 38.50920605659485,
+      "parsing_quality": "minimal_data",
+      "error": null
+    }
+  ]
+}
