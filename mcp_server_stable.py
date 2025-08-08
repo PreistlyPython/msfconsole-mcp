@@ -20,6 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from msf_stable_integration import MSFConsoleStableWrapper, OperationStatus, OperationResult
 from msf_extended_tools import MSFExtendedTools, ExtendedOperationResult
+from msf_final_five_tools import MSFFinalFiveTools, FinalOperationResult
 
 # Set up logging
 logging.basicConfig(
@@ -34,13 +35,14 @@ class MSFConsoleMCPServer:
     def __init__(self):
         self.msf = MSFConsoleStableWrapper()
         self.extended_msf = MSFExtendedTools()
+        self.final_msf = MSFFinalFiveTools()
         self.initialized = False
         self.server_info = {
             "name": "msfconsole-stable",
-            "version": "2.0.0",
-            "description": "Production-ready MSFConsole MCP server with 95% coverage (23 tools)",
-            "tools_count": 23,
-            "coverage": "95%"
+            "version": "3.0.0",
+            "description": "Production-ready MSFConsole MCP server with 100% coverage (28 tools)",
+            "tools_count": 28,
+            "coverage": "100%"
         }
     
     async def initialize(self):
@@ -60,8 +62,14 @@ class MSFConsoleMCPServer:
                 logger.error(f"Extended MSFConsole initialization failed: {extended_result.error}")
                 return False
             
+            # Initialize final five wrapper
+            final_result = await self.final_msf.initialize()
+            if final_result.status != OperationStatus.SUCCESS:
+                logger.error(f"Final five tools initialization failed: {final_result.error}")
+                return False
+            
             self.initialized = True
-            logger.info("MSFConsole MCP server with extended tools initialized successfully (23 tools)")
+            logger.info("MSFConsole MCP server with 100% coverage initialized successfully (28 tools)")
             return True
             
         return True
@@ -425,6 +433,78 @@ class MSFConsoleMCPServer:
                     },
                     "required": ["action"]
                 }
+            },
+            # Final Five Tools for 100% Coverage
+            {
+                "name": "msf_core_system_manager",
+                "description": "Complete core system functionality including banner, connect, debug, spool, threads, and plugin management",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["banner", "color", "tips", "features", "connect", "debug", "spool", "time", "threads", "history", "grep", "load", "unload", "reload_lib"], "description": "System action"},
+                        "target": {"type": "string", "description": "Target for specific actions (host for connect, plugin for load/unload, etc.)"},
+                        "options": {"type": "object", "description": "Additional options for the action", "additionalProperties": True}
+                    },
+                    "required": ["action"]
+                }
+            },
+            {
+                "name": "msf_advanced_module_controller",
+                "description": "Complete module stack and advanced operations including back, clearm, listm, popm, pushm, favorites",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["back", "clearm", "listm", "popm", "pushm", "previous", "favorites", "favorite", "loadpath", "reload_all", "advanced", "show"], "description": "Module action"},
+                        "module_path": {"type": "string", "description": "Module path for specific operations"},
+                        "stack_operation": {"type": "string", "description": "Stack operation type"},
+                        "show_type": {"type": "string", "description": "Type of modules to show (exploits, payloads, auxiliary, etc.)"}
+                    },
+                    "required": ["action"]
+                }
+            },
+            {
+                "name": "msf_job_manager",
+                "description": "Complete job lifecycle management including handler start, job listing, killing, and renaming",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["jobs", "handler", "kill", "rename_job", "monitor", "background"], "description": "Job action"},
+                        "job_id": {"type": "string", "description": "Job ID for specific operations"},
+                        "handler_config": {"type": "object", "description": "Handler configuration", "additionalProperties": {"type": "string"}},
+                        "job_name": {"type": "string", "description": "New name for rename operation"}
+                    },
+                    "required": ["action"]
+                }
+            },
+            {
+                "name": "msf_database_admin_controller",
+                "description": "Complete database administration including connect, export, import, analyze, and nmap integration",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["db_connect", "db_disconnect", "db_save", "db_export", "db_import", "db_nmap", "db_stats", "db_remove", "db_rebuild_cache", "analyze"], "description": "Database action"},
+                        "connection_string": {"type": "string", "description": "Database connection string"},
+                        "file_path": {"type": "string", "description": "File path for import/export"},
+                        "export_format": {"type": "string", "enum": ["xml", "csv", "pwdump"], "default": "xml", "description": "Export format"},
+                        "nmap_options": {"type": "string", "description": "Nmap scan options"}
+                    },
+                    "required": ["action"]
+                }
+            },
+            {
+                "name": "msf_developer_debug_suite",
+                "description": "Development and debugging capabilities including edit, pry, irb, log, time, dns, and makerc",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "action": {"type": "string", "enum": ["edit", "pry", "irb", "log", "time", "dns", "makerc"], "description": "Developer action"},
+                        "target": {"type": "string", "description": "Target module/file to edit"},
+                        "command_to_time": {"type": "string", "description": "Command to measure execution time"},
+                        "dns_config": {"type": "object", "description": "DNS configuration options", "additionalProperties": True},
+                        "output_file": {"type": "string", "description": "Output file for makerc"}
+                    },
+                    "required": ["action"]
+                }
             }
         ]
     
@@ -459,12 +539,17 @@ class MSFConsoleMCPServer:
                              "msf_resource_executor", "msf_loot_collector", "msf_vulnerability_tracker",
                              "msf_reporting_engine", "msf_automation_builder", "msf_plugin_manager"]:
                 return await self._handle_extended_tool(tool_name, arguments)
+            # Final five tools (100% coverage)
+            elif tool_name in ["msf_core_system_manager", "msf_advanced_module_controller",
+                             "msf_job_manager", "msf_database_admin_controller",
+                             "msf_developer_debug_suite"]:
+                return await self._handle_final_tool(tool_name, arguments)
             else:
                 return {
                     "content": [
                         {
                             "type": "text",
-                            "text": f"Error: Unknown tool '{tool_name}' (Available: 23 tools total)"
+                            "text": f"Error: Unknown tool '{tool_name}' (Available: 28 tools total)"
                         }
                     ]
                 }
@@ -693,12 +778,54 @@ class MSFConsoleMCPServer:
         
         return {"content": [{"type": "text", "text": json.dumps(response_data, indent=2)}]}
     
+    async def _handle_final_tool(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        """Handle final five tools using final wrapper."""
+        try:
+            # Map tool names to methods
+            method_name = tool_name  # Direct mapping since names match
+            method = getattr(self.final_msf, method_name)
+            
+            # Call the method with arguments
+            result = await method(**arguments)
+            
+            return self._format_final_result(result)
+        
+        except AttributeError:
+            return {"content": [{"type": "text", "text": f"Final tool method not found: {tool_name}"}]}
+        except Exception as e:
+            logger.error(f"Final tool error {tool_name}: {e}")
+            return {"content": [{"type": "text", "text": f"Final tool error: {str(e)}"}]}
+    
+    def _format_final_result(self, result: FinalOperationResult) -> Dict[str, Any]:
+        """Format final operation result for MCP response."""
+        response_data = {
+            "status": result.status.value,
+            "execution_time": result.execution_time,
+            "success": result.status == OperationStatus.SUCCESS,
+            "data": result.data,
+            "error": result.error
+        }
+        
+        # Add final tool specific fields
+        if hasattr(result, 'command_executed') and result.command_executed:
+            response_data["command_executed"] = result.command_executed
+        
+        if hasattr(result, 'affected_items') and result.affected_items:
+            response_data["affected_items"] = result.affected_items
+        
+        if hasattr(result, 'system_state') and result.system_state:
+            response_data["system_state"] = result.system_state
+        
+        return {"content": [{"type": "text", "text": json.dumps(response_data, indent=2)}]}
+    
     async def cleanup(self):
         """Clean up resources."""
         if self.msf:
             await self.msf.cleanup()
         if self.extended_msf:
             await self.extended_msf.cleanup()
+        if self.final_msf:
+            await self.final_msf.cleanup()
 
 # MCP Protocol Implementation
 async def handle_mcp_request(request: Dict[str, Any], server: MSFConsoleMCPServer) -> Dict[str, Any]:
