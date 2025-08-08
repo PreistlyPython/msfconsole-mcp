@@ -52,3 +52,31 @@ venv.bak/
 
 # Configuration files containing sensitive information
 config_local.py
+
+# Claude Code specific files (not for public)
+CLAUDE.md
+.claude/
+*.claude
+
+# Development and debug files
+debug_*.py
+fix_*.py
+test_*_fix.py
+measure_*.py
+*_backup.py
+*_backup_*
+*_test.py
+test_*.py
+
+# Internal documentation and brainstorming
+Knowledge/
+Instructions/
+HIGH_LEVERAGE_TOOLS_BRAINSTORM.md
+MSF_MCP_*_ANALYSIS.md
+MSF_MCP_*_TODO.md
+MSF_MCP_*_REPORT.md
+
+# Temporary artifacts
+*_results.json
+*_output.py
+tmp_*
