@@ -184,6 +184,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             logger.error(f"MSF Evasion Suite error: {e}")
             return AdvancedResult(
                 status=OperationStatus.FAILURE,
+                data=None,
                 error=str(e),
                 execution_time=time.time() - start_time,
                 tool_name="msf_evasion_suite"
@@ -452,6 +453,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             else:
                 return AdvancedResult(
                     status=OperationStatus.FAILURE,
+                    data=None,
                     error=f"Unknown action: {action}",
                     execution_time=time.time() - start_time,
                     tool_name="msf_listener_orchestrator"
@@ -461,6 +463,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             logger.error(f"MSF Listener Orchestrator error: {e}")
             return AdvancedResult(
                 status=OperationStatus.FAILURE,
+                data=None,
                 error=str(e),
                 execution_time=time.time() - start_time,
                 tool_name="msf_listener_orchestrator"
@@ -582,6 +585,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             else:
                 return AdvancedResult(
                     status=OperationStatus.FAILURE,
+                    data=None,
                     error=f"Unknown action: {action}",
                     execution_time=time.time() - start_time,
                     tool_name="msf_workspace_automator"
@@ -591,6 +595,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             logger.error(f"MSF Workspace Automator error: {e}")
             return AdvancedResult(
                 status=OperationStatus.FAILURE,
+                data=None,
                 error=str(e),
                 execution_time=time.time() - start_time,
                 tool_name="msf_workspace_automator"
@@ -605,6 +610,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
         if result.status != OperationStatus.SUCCESS:
             return AdvancedResult(
                 status=OperationStatus.FAILURE,
+                data=None,
                 error=f"Failed to create workspace: {result.error}",
                 execution_time=time.time() - start_time,
                 tool_name="msf_workspace_automator"
@@ -689,6 +695,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
                 if result.returncode != 0:
                     return AdvancedResult(
                         status=OperationStatus.FAILURE,
+                        data=None,
                         error=f"Failed to generate payload: {result.stderr}",
                         execution_time=time.time() - start_time,
                         tool_name="msf_encoder_factory"
@@ -751,6 +758,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             logger.error(f"MSF Encoder Factory error: {e}")
             return AdvancedResult(
                 status=OperationStatus.FAILURE,
+                data=None,
                 error=str(e),
                 execution_time=time.time() - start_time,
                 tool_name="msf_encoder_factory"
@@ -838,6 +846,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             else:
                 return AdvancedResult(
                     status=OperationStatus.FAILURE,
+                    data=None,
                     error=f"Unsupported tool: {tool}",
                     execution_time=time.time() - start_time,
                     tool_name="msf_integration_bridge"
@@ -847,6 +856,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             logger.error(f"MSF Integration Bridge error: {e}")
             return AdvancedResult(
                 status=OperationStatus.FAILURE,
+                data=None,
                 error=str(e),
                 execution_time=time.time() - start_time,
                 tool_name="msf_integration_bridge"
@@ -860,6 +870,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             if not target:
                 return AdvancedResult(
                     status=OperationStatus.FAILURE,
+                    data=None,
                     error="Nmap scan requires target",
                     execution_time=time.time() - start_time,
                     tool_name="msf_integration_bridge"
@@ -895,6 +906,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             else:
                 return AdvancedResult(
                     status=OperationStatus.FAILURE,
+                    data=None,
                     error=f"Nmap scan failed: {result.stderr}",
                     execution_time=time.time() - start_time,
                     tool_name="msf_integration_bridge"
@@ -904,6 +916,7 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             if not file_path:
                 return AdvancedResult(
                     status=OperationStatus.FAILURE,
+                    data=None,
                     error="Import requires file path",
                     execution_time=time.time() - start_time,
                     tool_name="msf_integration_bridge"

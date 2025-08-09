@@ -735,8 +735,10 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
     async def msf_handler_manager(
         self,
         action: str,
-        payload: str = None,
+        handler_name: str,
+        payload_type: str = None,
         options: Dict[str, str] = None,
+        auto_options: Dict = None,
         timeout: Optional[float] = None
     ) -> ExtendedOperationResult:
         """
@@ -746,13 +748,13 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
         start_time = time.time()
         
         try:
-            if action == "start":
-                if not payload or not options:
+            if action == "start" or action == "create":
+                if not payload_type or not options:
                     return ExtendedOperationResult(
                         status=OperationStatus.FAILURE,
                         data=None,
                         execution_time=time.time() - start_time,
-                        error="Payload and options required for start action"
+                        error="Payload_type and options required for start/create action"
                     )
                 
                 # Use multi/handler
@@ -760,7 +762,7 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
                 
                 if use_result.status == OperationStatus.SUCCESS:
                     # Set payload
-                    await self.execute_command(f"set payload {payload}")
+                    await self.execute_command(f"set payload {payload_type}")
                     
                     # Set options
                     await self.msf_module_manager("set", options=options)
