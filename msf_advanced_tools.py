@@ -869,17 +869,17 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
         try:
             if action == "scan_and_import":
                 if not target:
-                return AdvancedResult(
+                    return AdvancedResult(
                     status=OperationStatus.FAILURE,
                     data=None,
                     error="Nmap scan requires target",
                     execution_time=time.time() - start_time,
                     tool_name="msf_integration_bridge"
                 )
-            
-            # Generate nmap scan file
-            if not file_path:
-                file_path = f"nmap_scan_{int(time.time())}.xml"
+                
+                # Generate nmap scan file
+                if not file_path:
+                    file_path = f"nmap_scan_{int(time.time())}.xml"
             
             # Run nmap scan (use -sT for TCP connect scan which doesn't require root)
             cmd = ["nmap", "-sT", "-sV", "-A", "--script=vuln", "-oX", file_path, target]

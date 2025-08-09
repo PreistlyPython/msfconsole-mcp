@@ -375,13 +375,11 @@ class MSFConsoleMCPServer:
                 "inputSchema": {
                     "type": "object",
                     "properties": {
-                        "action": {"type": "string", "enum": ["execute", "validate", "create", "list", "schedule", "monitor"], "description": "Resource action"},
                         "script_path": {"type": "string", "description": "Path to resource script"},
-                        "script_content": {"type": "string", "description": "Script content (for create action)"},
-                        "variables": {"type": "object", "description": "Script variables", "additionalProperties": {"type": "string"}},
-                        "schedule_config": {"type": "object", "description": "Scheduling configuration", "additionalProperties": True}
+                        "commands": {"type": "array", "items": {"type": "string"}, "description": "List of MSF commands to execute"},
+                        "timeout": {"type": "number", "description": "Optional timeout in seconds"}
                     },
-                    "required": ["action"]
+                    "required": []
                 }
             },
             {

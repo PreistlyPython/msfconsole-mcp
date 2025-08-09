@@ -1265,6 +1265,19 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
                     )
                     
             elif commands:
+                # Debug: Check what we received
+                logger.info(f"Resource executor received commands: {commands} (type: {type(commands)})")
+                
+                # Handle case where commands comes as a string representation
+                if isinstance(commands, str):
+                    # Try to parse as JSON array
+                    try:
+                        import json
+                        commands = json.loads(commands)
+                    except:
+                        # Fallback: treat as single command
+                        commands = [commands]
+                
                 # Execute commands sequentially
                 results = []
                 total_time = 0
