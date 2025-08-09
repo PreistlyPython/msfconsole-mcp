@@ -43,11 +43,11 @@ class MSFConsoleMCPServer:
         self.initialized = False
         self.server_info = {
             "name": "msfconsole-complete",
-            "version": "4.0.0",
-            "description": "Complete MSF ecosystem MCP server with 95% coverage (38 tools)",
-            "tools_count": 38,
-            "coverage": "95%",
-            "ecosystem_tools": 10,
+            "version": "4.1.0",
+            "description": "Complete MSF ecosystem MCP server with 97% coverage (37 tools)",
+            "tools_count": 37,
+            "coverage": "97%",
+            "ecosystem_tools": 9,
             "new_capabilities": ["msfvenom direct", "database direct", "RPC interface", "advanced evasion", "reporting"]
         }
     
@@ -683,23 +683,6 @@ class MSFConsoleMCPServer:
                     "required": ["payload_data", "encoding_chain"]
                 }
             },
-            {
-                "name": "msf_integration_bridge",
-                "description": "Bridge for integrating third-party security tools (Nmap, Nessus, Burp, custom tools)",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "tool": {"type": "string", "enum": ["nmap", "nessus", "burp", "nikto", "dirb", "sqlmap", "custom"], "description": "Third-party tool to integrate"},
-                        "action": {"type": "string", "enum": ["scan_and_import", "import", "export", "sync"], "description": "Integration action"},
-                        "data_format": {"type": "string", "enum": ["xml", "csv", "json"], "default": "xml", "description": "Data format for exchange"},
-                        "file_path": {"type": "string", "description": "Input/output file path"},
-                        "target": {"type": "string", "description": "Target for scan/test"},
-                        "sync_mode": {"type": "string", "enum": ["import", "export", "bidirectional"], "default": "import", "description": "Synchronization mode"},
-                        "custom_parser": {"type": "string", "description": "Custom parser script"}
-                    },
-                    "required": ["tool", "action"]
-                }
-            }
         ]
     
     async def handle_tool_call(self, tool_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -744,7 +727,7 @@ class MSFConsoleMCPServer:
                 return await self._handle_ecosystem_tool(tool_name, arguments)
             # Advanced ecosystem tools
             elif tool_name in ["msf_evasion_suite", "msf_listener_orchestrator", "msf_workspace_automator",
-                             "msf_encoder_factory", "msf_integration_bridge"]:
+                             "msf_encoder_factory"]:
                 return await self._handle_advanced_tool(tool_name, arguments)
             else:
                 return {
