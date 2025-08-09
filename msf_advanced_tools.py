@@ -866,8 +866,9 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
         """Integrate with Nmap."""
         start_time = time.time()
         
-        if action == "scan_and_import":
-            if not target:
+        try:
+            if action == "scan_and_import":
+                if not target:
                 return AdvancedResult(
                     status=OperationStatus.FAILURE,
                     data=None,
@@ -880,10 +881,27 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
             if not file_path:
                 file_path = f"nmap_scan_{int(time.time())}.xml"
             
-            # Run nmap scan
-            cmd = ["nmap", "-sS", "-sV", "-O", "-A", "--script=vuln", "-oX", file_path, target]
+            # Run nmap scan (use -sT for TCP connect scan which doesn't require root)
+            cmd = ["nmap", "-sT", "-sV", "-A", "--script=vuln", "-oX", file_path, target]
             
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+            except subprocess.TimeoutExpired:
+                return AdvancedResult(
+                    status=OperationStatus.FAILURE,
+                    data=None,
+                    error="Nmap scan timed out after 600 seconds",
+                    execution_time=time.time() - start_time,
+                    tool_name="msf_integration_bridge"
+                )
+            except Exception as e:
+                return AdvancedResult(
+                    status=OperationStatus.FAILURE,
+                    data=None,
+                    error=f"Nmap execution error: {str(e)}",
+                    execution_time=time.time() - start_time,
+                    tool_name="msf_integration_bridge"
+                )
             
             if result.returncode == 0:
                 # Import into MSF
@@ -933,6 +951,15 @@ class MSFAdvancedTools(MSFConsoleStableWrapper):
                     "file_path": file_path,
                     "import_result": result.data
                 },
+                execution_time=time.time() - start_time,
+                tool_name="msf_integration_bridge"
+            )
+        except Exception as e:
+            logger.error(f"Error in _integrate_nmap: {e}")
+            return AdvancedResult(
+                status=OperationStatus.FAILURE,
+                data=None,
+                error=f"Integration error: {str(e)}",
                 execution_time=time.time() - start_time,
                 tool_name="msf_integration_bridge"
             )
