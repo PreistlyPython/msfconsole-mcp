@@ -1270,11 +1270,14 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
                 
                 # Handle case where commands comes as a string representation
                 if isinstance(commands, str):
+                    logger.info(f"Commands is string, attempting JSON parse: {commands}")
                     # Try to parse as JSON array
                     try:
                         import json
                         commands = json.loads(commands)
-                    except:
+                        logger.info(f"Successfully parsed to: {commands}")
+                    except Exception as e:
+                        logger.warning(f"JSON parse failed ({e}), treating as single command")
                         # Fallback: treat as single command
                         commands = [commands]
                 

@@ -930,6 +930,24 @@ class MSFConsoleMCPServer:
             method_name = tool_name  # Direct mapping since names match
             method = getattr(self.extended_msf, method_name)
             
+            # Debug logging for resource executor
+            if tool_name == "msf_resource_executor":
+                logger.info(f"Resource executor MCP arguments: {arguments}")
+                logger.info(f"Commands type: {type(arguments.get('commands'))}")
+                logger.info(f"Commands value: {arguments.get('commands')}")
+                logger.info(f"Commands repr: {repr(arguments.get('commands'))}")
+                
+                # Try to fix the commands parameter if it's a string
+                commands = arguments.get('commands')
+                if isinstance(commands, str):
+                    try:
+                        import json
+                        parsed_commands = json.loads(commands)
+                        logger.info(f"Successfully parsed commands from string to: {parsed_commands}")
+                        arguments['commands'] = parsed_commands
+                    except Exception as e:
+                        logger.warning(f"Failed to parse commands as JSON: {e}")
+            
             # Call the method with arguments
             result = await method(**arguments)
             
