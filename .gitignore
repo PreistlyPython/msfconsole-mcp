@@ -66,7 +66,6 @@ measure_*.py
 *_backup.py
 *_backup_*
 *_test.py
-test_*.py
 
 # Internal documentation and brainstorming
 Knowledge/
@@ -80,3 +79,31 @@ MSF_MCP_*_REPORT.md
 *_results.json
 *_output.py
 tmp_*
+
+# MSF Report files
+msf_report_*.json
+msf_report_*.html
+msf_report_*.pdf
+msf_report_*.xml
+msf_report_*.csv
+
+# Testing and status reports
+*_REPORT.md
+*_STATUS.md
+COMPREHENSIVE_*.md
+FINAL_*.md
+
+# Broken or backup files
+*_broken.py
+*_backup.py
+*_old.py
+
+# Personal information
+~/
+
+# Test files (keep only essential ones)
+test_complete_*.py
+test_ecosystem_*.py
+test_environment_*.py
+test_imports_*.py
+test_new_*.py
