@@ -87,11 +87,14 @@ msf_report_*.pdf
 msf_report_*.xml
 msf_report_*.csv
 
-# Testing and status reports
+# Testing and status reports (exclude specific ones)
 *_REPORT.md
 *_STATUS.md
 COMPREHENSIVE_*.md
 FINAL_*.md
+
+# Keep important analysis reports
+!MSF_FEATURE_GAP_ANALYSIS_REPORT.md
 
 # Broken or backup files
 *_broken.py
