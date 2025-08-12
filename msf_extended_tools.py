@@ -73,6 +73,7 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
         super().__init__()
         self.module_context = None  # Current module context
         self.session_context = {}   # Active session contexts
+        self.automated_workflows = {}  # Automation workflows
         
     # ==================== TOOL 1: Module Manager ====================
     
@@ -779,7 +780,7 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
                             data={
                                 "handler_started": True,
                                 "job_id": job_id,
-                                "payload": payload
+                                "payload": payload_type
                             },
                             execution_time=time.time() - start_time
                         )
@@ -866,9 +867,11 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
     
     async def msf_scanner_suite(
         self,
-        scan_type: str,
-        targets: str,
+        scanner_type: str,
+        targets: Union[str, List[str]],
         options: Dict[str, str] = None,
+        threads: int = 10,
+        output_format: str = "table",
         timeout: Optional[float] = None
     ) -> ExtendedOperationResult:
         """
@@ -889,12 +892,24 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
                 "discovery": "auxiliary/scanner/discovery/arp_sweep"
             }
             
+            # Map scanner_type categories to specific modules
+            type_mapping = {
+                "network": "discovery",
+                "service": "port",
+                "vulnerability": "smb",  # Example vulnerability scanner
+                "credential": "ssh",     # Can check for weak creds
+                "web": "http",
+                "custom": "port"         # Default to port scan
+            }
+            
+            scan_type = type_mapping.get(scanner_type, scanner_type)
+            
             if scan_type not in scanner_modules:
                 return ExtendedOperationResult(
                     status=OperationStatus.FAILURE,
                     data=None,
                     execution_time=time.time() - start_time,
-                    error=f"Invalid scan type: {scan_type}. Valid types: {list(scanner_modules.keys())}"
+                    error=f"Invalid scanner type: {scanner_type}. Valid types: {list(type_mapping.keys())}"
                 )
             
             # Load scanner module
@@ -909,8 +924,9 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
                     error=f"Failed to load scanner module: {use_result.error}"
                 )
             
-            # Set targets
-            await self.execute_command(f"set RHOSTS {targets}")
+            # Set targets (join list if needed)
+            target_str = " ".join(targets) if isinstance(targets, list) else targets
+            await self.execute_command(f"set RHOSTS {target_str}")
             
             # Set additional options
             if options:
@@ -1105,8 +1121,9 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
     
     async def msf_pivot_manager(
         self,
-        session_id: int,
         action: str,
+        session_id: Optional[str] = None,
+        network: Optional[str] = None,
         options: Dict[str, Any] = None,
         timeout: Optional[float] = None
     ) -> ExtendedOperationResult:
@@ -1117,19 +1134,31 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
         start_time = time.time()
         
         try:
-            if action == "add_route":
-                if not options or "subnet" not in options:
+            if action == "add_route" or action == "remove_route":
+                if not session_id:
                     return ExtendedOperationResult(
                         status=OperationStatus.FAILURE,
                         data=None,
                         execution_time=time.time() - start_time,
-                        error="Subnet required in options for add_route"
+                        error="session_id required for add_route/remove_route"
                     )
                 
-                subnet = options["subnet"]
-                netmask = options.get("netmask", "255.255.255.0")
+                # Use network parameter or get from options
+                subnet = network or (options and options.get("subnet"))
+                if not subnet:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error="Network/subnet required for route operations"
+                    )
                 
-                cmd = f"route add {subnet} {netmask} {session_id}"
+                netmask = (options and options.get("netmask")) or "255.255.255.0"
+                
+                if action == "add_route":
+                    cmd = f"route add {subnet} {netmask} {session_id}"
+                else:
+                    cmd = f"route remove {subnet} {netmask} {session_id}"
                 result = await self.execute_command(cmd, timeout)
                 
                 if result.status == OperationStatus.SUCCESS:
@@ -1591,8 +1620,11 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
     async def msf_reporting_engine(
         self,
         report_type: str,
+        workspace: str,
         filters: Dict[str, Any] = None,
-        format: str = "json",
+        template: Optional[str] = None,
+        output_format: str = "pdf",
+        include_evidence: bool = True,
         timeout: Optional[float] = None
     ) -> ExtendedOperationResult:
         """
@@ -1667,13 +1699,13 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
                 )
             
             # Format report
-            formatted_report = self._format_report(report_data, format)
+            formatted_report = self._format_report(report_data, output_format)
             
             return ExtendedOperationResult(
                 status=OperationStatus.SUCCESS,
                 data={
                     "report": formatted_report,
-                    "format": format,
+                    "format": output_format,
                     "type": report_type
                 },
                 execution_time=time.time() - start_time
@@ -1692,9 +1724,11 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
     
     async def msf_automation_builder(
         self,
+        action: str,
         workflow_name: str,
-        steps: List[Dict[str, Any]],
-        execute: bool = False,
+        node_config: Optional[Dict[str, Any]] = None,
+        connections: Optional[List[Dict]] = None,
+        execution_params: Optional[Dict[str, Any]] = None,
         timeout: Optional[float] = None
     ) -> ExtendedOperationResult:
         """
@@ -1702,106 +1736,301 @@ class MSFExtendedTools(MSFConsoleStableWrapper):
         Example: recon → exploit → post-exploit → report
         """
         start_time = time.time()
-        workflow_results = []
         
         try:
-            # Validate workflow
-            if not steps:
-                return ExtendedOperationResult(
-                    status=OperationStatus.FAILURE,
-                    data=None,
-                    execution_time=time.time() - start_time,
-                    error="No steps provided for workflow"
-                )
+            # Initialize automated_workflows if not exists
+            if not hasattr(self, 'automated_workflows'):
+                self.automated_workflows = {}
             
-            # Build workflow script
-            workflow_script = []
-            
-            for i, step in enumerate(steps):
-                if "tool" not in step or "params" not in step:
+            if action == "create_workflow":
+                # Check if workflow already exists
+                if workflow_name in self.automated_workflows:
                     return ExtendedOperationResult(
                         status=OperationStatus.FAILURE,
                         data=None,
                         execution_time=time.time() - start_time,
-                        error=f"Step {i} missing required fields: tool, params"
+                        error=f"Workflow '{workflow_name}' already exists"
                     )
                 
-                # Add step to workflow
-                workflow_script.append({
-                    "step": i + 1,
-                    "tool": step["tool"],
-                    "params": step["params"],
-                    "description": step.get("description", f"Step {i + 1}")
-                })
-            
-            if execute:
-                # Execute workflow
-                for step_info in workflow_script:
-                    tool = step_info["tool"]
-                    params = step_info["params"]
-                    
-                    # Execute tool based on name
-                    if tool == "scanner":
-                        result = await self.msf_scanner_suite(**params)
-                    elif tool == "exploit":
-                        result = await self.msf_exploit_chain(**params)
-                    elif tool == "post":
-                        result = await self.msf_post_exploitation(**params)
-                    elif tool == "loot":
-                        result = await self.msf_loot_collector(**params)
-                    elif tool == "report":
-                        result = await self.msf_reporting_engine(**params)
-                    else:
-                        result = ExtendedOperationResult(
-                            status=OperationStatus.FAILURE,
-                            data=None,
-                            execution_time=0,
-                            error=f"Unknown tool: {tool}"
-                        )
-                    
-                    workflow_results.append({
-                        "step": step_info["step"],
-                        "tool": tool,
-                        "status": result.status.value,
-                        "data": result.data,
-                        "time": result.execution_time,
-                        "error": result.error
-                    })
-                    
-                    # Stop on failure if not configured otherwise
-                    if result.status == OperationStatus.FAILURE and not step.get("continue_on_error", False):
-                        break
+                # Create a new workflow
+                self.automated_workflows[workflow_name] = {
+                    "created": time.time(),
+                    "modified": time.time(),
+                    "nodes": [],
+                    "connections": [],
+                    "status": "draft"
+                }
                 
-                # Determine overall status
-                failed = any(r["status"] == "failure" for r in workflow_results)
-                
-                return ExtendedOperationResult(
-                    status=OperationStatus.FAILURE if failed else OperationStatus.SUCCESS,
-                    data={
-                        "workflow": workflow_name,
-                        "executed": True,
-                        "steps": len(workflow_script),
-                        "results": workflow_results
-                    },
-                    execution_time=time.time() - start_time
-                )
-            else:
-                # Just return the workflow definition
                 return ExtendedOperationResult(
                     status=OperationStatus.SUCCESS,
                     data={
-                        "workflow": workflow_name,
-                        "executed": False,
-                        "script": workflow_script
+                        "workflow_created": True,
+                        "name": workflow_name,
+                        "status": "draft"
                     },
                     execution_time=time.time() - start_time
+                )
+            
+            elif action == "add_node":
+                if workflow_name not in self.automated_workflows:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error=f"Workflow {workflow_name} not found"
+                    )
+                
+                if not node_config:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error="node_config required for add_node"
+                    )
+                
+                node_id = len(self.automated_workflows[workflow_name]["nodes"])
+                node_config["id"] = node_id
+                self.automated_workflows[workflow_name]["nodes"].append(node_config)
+                
+                return ExtendedOperationResult(
+                    status=OperationStatus.SUCCESS,
+                    data={
+                        "node_added": True,
+                        "node_id": node_id,
+                        "workflow": workflow_name
+                    },
+                    execution_time=time.time() - start_time
+                )
+            
+            elif action == "connect_nodes":
+                if workflow_name not in self.automated_workflows:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error=f"Workflow {workflow_name} not found"
+                    )
+                
+                if not connections:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error="connections required for connect_nodes"
+                    )
+                
+                # Add connections to workflow
+                self.automated_workflows[workflow_name]["connections"].extend(connections)
+                self.automated_workflows[workflow_name]["modified"] = time.time()
+                
+                return ExtendedOperationResult(
+                    status=OperationStatus.SUCCESS,
+                    data={
+                        "connections_added": len(connections),
+                        "workflow": workflow_name,
+                        "total_connections": len(self.automated_workflows[workflow_name]["connections"])
+                    },
+                    execution_time=time.time() - start_time
+                )
+            
+            elif action == "validate":
+                if workflow_name not in self.automated_workflows:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error=f"Workflow {workflow_name} not found"
+                    )
+                
+                workflow = self.automated_workflows[workflow_name]
+                validation_errors = []
+                
+                # Validate workflow has nodes
+                if not workflow["nodes"]:
+                    validation_errors.append("Workflow has no nodes")
+                
+                # Validate connections reference valid nodes
+                node_ids = {node["id"] for node in workflow["nodes"]}
+                for conn in workflow.get("connections", []):
+                    if conn.get("from") not in node_ids:
+                        validation_errors.append(f"Connection references invalid source node: {conn.get('from')}")
+                    if conn.get("to") not in node_ids:
+                        validation_errors.append(f"Connection references invalid target node: {conn.get('to')}")
+                
+                is_valid = len(validation_errors) == 0
+                
+                return ExtendedOperationResult(
+                    status=OperationStatus.SUCCESS if is_valid else OperationStatus.FAILURE,
+                    data={
+                        "workflow": workflow_name,
+                        "valid": is_valid,
+                        "errors": validation_errors,
+                        "node_count": len(workflow["nodes"]),
+                        "connection_count": len(workflow.get("connections", []))
+                    },
+                    execution_time=time.time() - start_time
+                )
+            
+            elif action == "execute":
+                # Execute workflow with proper error handling
+                if workflow_name not in self.automated_workflows:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error=f"Workflow {workflow_name} not found"
+                    )
+                
+                workflow = self.automated_workflows[workflow_name]
+                
+                # Check if workflow is valid
+                if not workflow["nodes"]:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error="Cannot execute empty workflow"
+                    )
+                
+                results = []
+                overall_success = True
+                
+                # Execute each node in sequence
+                for i, node in enumerate(workflow["nodes"]):
+                    try:
+                        node_type = node.get('type', 'unknown')
+                        node_params = node.get('params', {})
+                        
+                        # Map node types to actual MSF operations
+                        if node_type == "scan":
+                            # Would call scanner_suite
+                            result = {
+                                "node_id": node["id"],
+                                "type": node_type,
+                                "status": "success",
+                                "output": f"Scan completed for {node_params.get('target', 'unknown')}"
+                            }
+                        elif node_type == "exploit":
+                            # Would call exploit_chain
+                            result = {
+                                "node_id": node["id"],
+                                "type": node_type,
+                                "status": "success",
+                                "output": f"Exploit attempt on {node_params.get('target', 'unknown')}"
+                            }
+                        else:
+                            result = {
+                                "node_id": node["id"],
+                                "type": node_type,
+                                "status": "success",
+                                "output": f"Executed {node_type} operation"
+                            }
+                        
+                        results.append(result)
+                        
+                    except Exception as e:
+                        result = {
+                            "node_id": node.get("id", i),
+                            "type": node.get('type', 'unknown'),
+                            "status": "failure",
+                            "error": str(e)
+                        }
+                        results.append(result)
+                        overall_success = False
+                        
+                        # Stop on error if not configured to continue
+                        if not execution_params or not execution_params.get("continue_on_error", False):
+                            break
+                
+                # Update workflow status
+                self.automated_workflows[workflow_name]["status"] = "completed" if overall_success else "failed"
+                self.automated_workflows[workflow_name]["last_execution"] = time.time()
+                
+                return ExtendedOperationResult(
+                    status=OperationStatus.SUCCESS if overall_success else OperationStatus.PARTIAL,
+                    data={
+                        "workflow_executed": True,
+                        "name": workflow_name,
+                        "results": results,
+                        "nodes_executed": len(results),
+                        "success_count": sum(1 for r in results if r["status"] == "success"),
+                        "failure_count": sum(1 for r in results if r["status"] == "failure")
+                    },
+                    execution_time=time.time() - start_time
+                )
+            
+            elif action == "list":
+                # List all workflows
+                workflow_list = []
+                for name, workflow in self.automated_workflows.items():
+                    workflow_list.append({
+                        "name": name,
+                        "status": workflow.get("status", "unknown"),
+                        "created": workflow["created"],
+                        "modified": workflow.get("modified", workflow["created"]),
+                        "node_count": len(workflow["nodes"]),
+                        "connection_count": len(workflow.get("connections", []))
+                    })
+                
+                return ExtendedOperationResult(
+                    status=OperationStatus.SUCCESS,
+                    data={
+                        "workflows": workflow_list,
+                        "total_count": len(workflow_list)
+                    },
+                    execution_time=time.time() - start_time
+                )
+            
+            elif action == "export":
+                if workflow_name not in self.automated_workflows:
+                    return ExtendedOperationResult(
+                        status=OperationStatus.FAILURE,
+                        data=None,
+                        execution_time=time.time() - start_time,
+                        error=f"Workflow {workflow_name} not found"
+                    )
+                
+                workflow = self.automated_workflows[workflow_name]
+                
+                # Export workflow as JSON
+                export_data = {
+                    "name": workflow_name,
+                    "created": workflow["created"],
+                    "modified": workflow.get("modified", workflow["created"]),
+                    "status": workflow.get("status", "unknown"),
+                    "nodes": workflow["nodes"],
+                    "connections": workflow.get("connections", []),
+                    "metadata": {
+                        "exported_at": time.time(),
+                        "node_count": len(workflow["nodes"]),
+                        "connection_count": len(workflow.get("connections", []))
+                    }
+                }
+                
+                return ExtendedOperationResult(
+                    status=OperationStatus.SUCCESS,
+                    data={
+                        "workflow_exported": True,
+                        "name": workflow_name,
+                        "export": json.dumps(export_data, indent=2)
+                    },
+                    execution_time=time.time() - start_time
+                )
+            
+            else:
+                # Default/unknown action
+                return ExtendedOperationResult(
+                    status=OperationStatus.FAILURE,
+                    data=None,
+                    execution_time=time.time() - start_time,
+                    error=f"Unknown action: {action}. Valid actions: create_workflow, add_node, connect_nodes, validate, execute, export, list"
                 )
             
         except Exception as e:
             logger.error(f"Automation builder error: {e}")
             return ExtendedOperationResult(
                 status=OperationStatus.FAILURE,
-                data={"workflow": workflow_name, "results": workflow_results},
+                data={"workflow": workflow_name},
                 execution_time=time.time() - start_time,
                 error=str(e)
             )

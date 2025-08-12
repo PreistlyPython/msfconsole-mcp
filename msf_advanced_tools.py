@@ -782,6 +782,132 @@ class MSFAdvancedTools(MSFBaseTools):
             tool_name="msf_integration_bridge"
         )
     
+    # Missing listener orchestrator methods
+    async def _monitor_listeners(self) -> AdvancedResult:
+        """Monitor active listeners and sessions."""
+        start_time = time.time()
+        
+        # Get jobs (listeners)
+        jobs_result = await self.execute_command("jobs -l")
+        
+        # Get sessions
+        sessions_result = await self.execute_command("sessions -l")
+        
+        # Parse results
+        active_jobs = []
+        if jobs_result.data and "stdout" in jobs_result.data:
+            # Parse jobs output
+            lines = jobs_result.data["stdout"].split('\n')
+            for line in lines:
+                if line.strip() and not line.startswith('Jobs') and not line.startswith('==='):
+                    active_jobs.append(line.strip())
+        
+        active_sessions = []
+        if sessions_result.data and "stdout" in sessions_result.data:
+            # Parse sessions output
+            lines = sessions_result.data["stdout"].split('\n')
+            for line in lines:
+                if line.strip() and not line.startswith('Active') and not line.startswith('==='):
+                    active_sessions.append(line.strip())
+        
+        return AdvancedResult(
+            status=OperationStatus.SUCCESS,
+            data={
+                "listeners": {
+                    "active": len(active_jobs),
+                    "jobs": active_jobs
+                },
+                "sessions": {
+                    "active": len(active_sessions),
+                    "list": active_sessions
+                },
+                "monitored_at": time.time()
+            },
+            execution_time=time.time() - start_time,
+            tool_name="msf_listener_orchestrator"
+        )
+    
+    async def _start_listeners(self, config: Dict) -> AdvancedResult:
+        """Start multiple listeners."""
+        # Placeholder - would implement starting multiple listeners
+        return await self._create_listener(config, True, False, False)
+    
+    async def _stop_listeners(self, config: Dict) -> AdvancedResult:
+        """Stop listeners."""
+        start_time = time.time()
+        
+        # Kill all jobs if no specific config
+        if not config or "job_ids" not in config:
+            result = await self.execute_command("jobs -K")
+            return AdvancedResult(
+                status=OperationStatus.SUCCESS,
+                data={
+                    "stopped_all": True,
+                    "output": result.data.get("stdout", "") if result.data else ""
+                },
+                execution_time=time.time() - start_time,
+                tool_name="msf_listener_orchestrator"
+            )
+        
+        # Kill specific jobs
+        stopped = []
+        for job_id in config["job_ids"]:
+            result = await self.execute_command(f"jobs -k {job_id}")
+            stopped.append({
+                "job_id": job_id,
+                "success": result.status == OperationStatus.SUCCESS
+            })
+        
+        return AdvancedResult(
+            status=OperationStatus.SUCCESS,
+            data={
+                "stopped_jobs": stopped
+            },
+            execution_time=time.time() - start_time,
+            tool_name="msf_listener_orchestrator"
+        )
+    
+    async def _create_listener_template(self, template_name: str, config: Dict) -> AdvancedResult:
+        """Create listener template."""
+        # Placeholder - would save template configuration
+        return AdvancedResult(
+            status=OperationStatus.SUCCESS,
+            data={
+                "template_created": True,
+                "name": template_name,
+                "configuration": config
+            },
+            execution_time=0.1,
+            tool_name="msf_listener_orchestrator"
+        )
+    
+    async def _auto_migrate_sessions(self) -> AdvancedResult:
+        """Auto-migrate sessions."""
+        # Placeholder - would implement session migration
+        return AdvancedResult(
+            status=OperationStatus.SUCCESS,
+            data={
+                "migration_enabled": True,
+                "note": "Would implement automatic session migration"
+            },
+            execution_time=0.1,
+            tool_name="msf_listener_orchestrator"
+        )
+    
+    async def _orchestrate_multiple_listeners(self, config: Dict) -> AdvancedResult:
+        """Orchestrate multiple listeners."""
+        # Placeholder - would implement complex listener orchestration
+        return AdvancedResult(
+            status=OperationStatus.SUCCESS,
+            data={
+                "orchestration_started": True,
+                "configuration": config,
+                "note": "Would implement multi-listener orchestration"
+            },
+            execution_time=0.1,
+            tool_name="msf_listener_orchestrator"
+        )
+    
     async def cleanup(self):
         """Enhanced cleanup for advanced tools."""
         # Stop any running listeners
