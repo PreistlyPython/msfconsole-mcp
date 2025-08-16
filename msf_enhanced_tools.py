@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from msf_stable_integration import MSFConsoleStableWrapper, OperationResult, ExtendedOperationResult
+from msf_stable_integration import MSFConsoleStableWrapper, OperationResult
+from msf_extended_tools import ExtendedOperationResult
 from msf_plugin_system import PluginManager, PluginCategory
 
 logger = logging.getLogger(__name__)

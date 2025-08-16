@@ -11,7 +11,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from dataclasses import dataclass, field
 from enum import Enum
 
-from msf_stable_integration import MSFConsoleStableWrapper, OperationResult, ExtendedOperationResult
+from msf_stable_integration import MSFConsoleStableWrapper, OperationResult
+from msf_extended_tools import ExtendedOperationResult
 
 logger = logging.getLogger(__name__)
 

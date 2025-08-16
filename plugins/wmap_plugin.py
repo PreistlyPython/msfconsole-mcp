@@ -5,6 +5,7 @@ Provides web application mapping and vulnerability scanning
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
 from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext, OperationResult
