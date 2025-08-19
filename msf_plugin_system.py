@@ -14,7 +14,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Type, Union
 
-from msf_stable_integration import MSFConsoleStableWrapper, OperationResult
+from msf_stable_integration import MSFConsoleStableWrapper, OperationResult, OperationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -87,10 +87,10 @@ class PluginInterface(ABC):
         """Execute a plugin command"""
         if command not in self.metadata.commands:
             return OperationResult(
-                success=False,
-                data=None,
-                error=f"Unknown command: {command}",
-                metadata={"plugin": self.metadata.name}
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                f"Unknown command: {command}"
             )
             
         method_name = f"cmd_{command}"
@@ -99,10 +99,10 @@ class PluginInterface(ABC):
             return await method(**args)
         else:
             return OperationResult(
-                success=False,
-                data=None,
-                error=f"Command not implemented: {command}",
-                metadata={"plugin": self.metadata.name}
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                f"Command not implemented: {command}"
             )
             
     def register_hook(self, event: str, callback: Callable) -> None:
@@ -149,16 +149,18 @@ class PluginRegistry:
         """Load and initialize a plugin"""
         if name in self._plugins:
             return OperationResult(
-                success=False,
-                data=None,
-                error=f"Plugin already loaded: {name}"
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                f"Plugin already loaded: {name}"
             )
             
         if name not in self._plugin_classes:
             return OperationResult(
-                success=False,
-                data=None,
-                error=f"Unknown plugin: {name}"
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                f"Unknown plugin: {name}"
             )
             
         try:
@@ -172,7 +174,7 @@ class PluginRegistry:
             
             # Initialize plugin
             result = await plugin.initialize()
-            if not result.success:
+            if result.status != OperationStatus.SUCCESS:
                 return result
                 
             # Register plugin
@@ -182,27 +184,28 @@ class PluginRegistry:
             
             logger.info(f"Loaded plugin: {name} v{plugin.metadata.version}")
             return OperationResult(
-                success=True,
-                data={"plugin": name, "metadata": plugin.metadata},
-                metadata={"action": "load_plugin"}
+                OperationStatus.SUCCESS,
+                {"plugin": name, "metadata": plugin.metadata},
+                0.0
             )
             
         except Exception as e:
             logger.error(f"Failed to load plugin {name}: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e),
-                metadata={"plugin": name}
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def unload_plugin(self, name: str) -> OperationResult:
         """Unload and cleanup a plugin"""
         if name not in self._plugins:
             return OperationResult(
-                success=False,
-                data=None,
-                error=f"Plugin not loaded: {name}"
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                f"Plugin not loaded: {name}"
             )
             
         try:
@@ -210,7 +213,7 @@ class PluginRegistry:
             
             # Cleanup plugin
             result = await plugin.cleanup()
-            if not result.success:
+            if result.status != OperationStatus.SUCCESS:
                 logger.warning(f"Plugin cleanup failed: {name}")
                 
             # Remove from registry
@@ -220,18 +223,18 @@ class PluginRegistry:
             
             logger.info(f"Unloaded plugin: {name}")
             return OperationResult(
-                success=True,
-                data={"plugin": name},
-                metadata={"action": "unload_plugin"}
+                OperationStatus.SUCCESS,
+                {"plugin": name},
+                0.0
             )
             
         except Exception as e:
             logger.error(f"Failed to unload plugin {name}: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e),
-                metadata={"plugin": name}
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def reload_plugin(self, name: str) -> OperationResult:
@@ -244,7 +247,7 @@ class PluginRegistry:
         # Unload if loaded
         if name in self._plugins:
             unload_result = await self.unload_plugin(name)
-            if not unload_result.success:
+            if unload_result.status != OperationStatus.SUCCESS:
                 return unload_result
                 
         # Load plugin
@@ -290,9 +293,10 @@ class PluginRegistry:
         plugin = self.get_plugin(plugin_name)
         if not plugin:
             return OperationResult(
-                success=False,
-                data=None,
-                error=f"Plugin not loaded: {plugin_name}"
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                f"Plugin not loaded: {plugin_name}"
             )
             
         return await plugin.execute_command(command, args)
@@ -350,7 +354,7 @@ class PluginRegistry:
             
             if temp_instance.metadata.auto_load:
                 result = await self.load_plugin(name)
-                if result.success:
+                if result.status == OperationStatus.SUCCESS:
                     loaded.append(name)
                     
         return loaded
@@ -383,21 +387,22 @@ class PluginManager:
             loaded = await self.registry.load_auto_plugins()
             
             return OperationResult(
-                success=True,
-                data={
+                OperationStatus.SUCCESS,
+                {
                     "discovered": discovered,
                     "loaded": loaded,
                     "plugin_dirs": [str(d) for d in self._plugin_dirs]
                 },
-                metadata={"action": "initialize_plugin_manager"}
+                0.0
             )
             
         except Exception as e:
             logger.error(f"Failed to initialize plugin manager: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def execute_command(self, plugin_name: str, command: str, 

@@ -9,11 +9,12 @@ import logging
 import os
 import subprocess
 import tempfile
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from msf_stable_integration import MSFConsoleStableWrapper, OperationResult
+from msf_stable_integration import MSFConsoleStableWrapper, OperationResult, OperationStatus
 from msf_extended_tools import ExtendedOperationResult
 from msf_plugin_system import PluginManager, PluginCategory
 
@@ -34,6 +35,7 @@ class MSFEnhancedTools(MSFConsoleStableWrapper):
         
     async def initialize_enhanced_features(self) -> OperationResult:
         """Initialize enhanced features including plugin system"""
+        start_time = time.time()
         try:
             # Initialize plugin manager
             self.plugin_manager = PluginManager(self)
@@ -44,18 +46,28 @@ class MSFEnhancedTools(MSFConsoleStableWrapper):
             
             result = await self.plugin_manager.initialize(plugin_dirs)
             
-            if result.success:
+            if result.status == OperationStatus.SUCCESS:
                 logger.info(f"Enhanced features initialized: {result.data}")
-                return result
+                return OperationResult(
+                    OperationStatus.SUCCESS,
+                    result.data,
+                    time.time() - start_time
+                )
             else:
-                return result
+                return OperationResult(
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Plugin initialization failed"
+                )
                 
         except Exception as e:
             logger.error(f"Failed to initialize enhanced features: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
     
     # ==================== PLUGIN MANAGEMENT ====================

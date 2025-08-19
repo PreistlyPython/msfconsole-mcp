@@ -107,7 +107,7 @@ class MSFConsoleMCPServer:
                 
             # Initialize enhanced features (plugin system)
             plugin_result = await self.enhanced_msf.initialize_enhanced_features()
-            if not plugin_result.success:
+            if plugin_result.status != OperationStatus.SUCCESS:
                 logger.warning(f"Plugin system initialization partial: {plugin_result.error}")
                 
             # Initialize v5.0 session manager
@@ -117,7 +117,7 @@ class MSFConsoleMCPServer:
                 return False
                 
             session_mgr_result = await self.session_manager.initialize_session_manager()
-            if not session_mgr_result.success:
+            if session_mgr_result.status != OperationStatus.SUCCESS:
                 logger.warning(f"Advanced session features partial: {session_mgr_result.error}")
             
             self.initialized = True

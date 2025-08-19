@@ -7,11 +7,13 @@ import asyncio
 import json
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 from pathlib import Path
 
-from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext, OperationResult
+from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext
+from msf_stable_integration import OperationResult, OperationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +67,7 @@ class SessionNotifierPlugin(PluginInterface):
         
     async def initialize(self) -> OperationResult:
         """Initialize session notifier plugin"""
+        start_time = time.time()
         try:
             # Register session event hooks
             self.register_hook("session_opened", self._on_session_opened)
@@ -76,25 +79,28 @@ class SessionNotifierPlugin(PluginInterface):
             
             self._initialized = True
             return OperationResult(
-                success=True,
-                data={
+                OperationStatus.SUCCESS,
+                {
                     "status": "initialized",
                     "enabled": self._enabled,
-                    "channels": self._channels
+                    "channels": self._channels,
+                    "plugin": "session_notifier"
                 },
-                metadata={"plugin": "session_notifier"}
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to initialize session notifier: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cleanup(self) -> OperationResult:
         """Cleanup session notifier resources"""
+        start_time = time.time()
         try:
             # Save configuration
             await self._save_config()
@@ -107,103 +113,111 @@ class SessionNotifierPlugin(PluginInterface):
                 })
                 
             return OperationResult(
-                success=True,
-                data={"status": "cleaned_up"},
-                metadata={"plugin": "session_notifier"}
+                OperationStatus.SUCCESS,
+                {"status": "cleaned_up", "plugin": "session_notifier"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to cleanup session notifier: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_enable(self, **kwargs) -> OperationResult:
         """Enable session notifications"""
         self._enabled = True
         return OperationResult(
-            success=True,
-            data={"enabled": True},
-            metadata={"action": "notifier_enable"}
+            OperationStatus.SUCCESS,
+            {"enabled": True, "action": "notifier_enable"},
+            0.0
         )
         
     async def cmd_disable(self, **kwargs) -> OperationResult:
         """Disable session notifications"""
         self._enabled = False
         return OperationResult(
-            success=True,
-            data={"enabled": False},
-            metadata={"action": "notifier_disable"}
+            OperationStatus.SUCCESS,
+            {"enabled": False, "action": "notifier_disable"},
+            0.0
         )
         
     async def cmd_status(self, **kwargs) -> OperationResult:
         """Show notifier status"""
         return OperationResult(
-            success=True,
-            data={
+            OperationStatus.SUCCESS,
+            {
                 "enabled": self._enabled,
                 "active_channels": [ch for ch, active in self._channels.items() if active],
                 "ip_filters": list(self._ip_filters),
                 "notifications_sent": len(self._notification_history),
-                "configuration": self._config
+                "configuration": self._config,
+                "action": "notifier_status"
             },
-            metadata={"action": "notifier_status"}
+            0.0
         )
         
     async def cmd_config(self, channel: Optional[str] = None, 
                         key: Optional[str] = None, 
                         value: Optional[str] = None, **kwargs) -> OperationResult:
         """Configure notification settings"""
+        start_time = time.time()
         try:
             if channel and key is None:
                 # Toggle channel
                 if channel in self._channels:
                     self._channels[channel] = not self._channels[channel]
                     return OperationResult(
-                        success=True,
-                        data={
+                        OperationStatus.SUCCESS,
+                        {
                             "channel": channel,
-                            "enabled": self._channels[channel]
+                            "enabled": self._channels[channel],
+                            "action": "notifier_config_channel"
                         },
-                        metadata={"action": "notifier_config_channel"}
+                        time.time() - start_time
                     )
                 else:
                     return OperationResult(
-                        success=False,
-                        data=None,
-                        error=f"Unknown channel: {channel}"
+                        OperationStatus.FAILURE,
+                        None,
+                        time.time() - start_time,
+                        f"Unknown channel: {channel}"
                     )
                     
             elif key and value:
                 # Set configuration value
                 self._config[key] = value
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "key": key,
-                        "value": value
+                        "value": value,
+                        "action": "notifier_config_set"
                     },
-                    metadata={"action": "notifier_config_set"}
+                    time.time() - start_time
                 )
                 
             else:
                 # Show current configuration
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "channels": self._channels,
-                        "configuration": self._config
+                        "configuration": self._config,
+                        "action": "notifier_config_show"
                     },
-                    metadata={"action": "notifier_config_show"}
+                    time.time() - start_time
                 )
                 
         except Exception as e:
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_test(self, message: Optional[str] = None, **kwargs) -> OperationResult:
@@ -219,13 +233,14 @@ class SessionNotifierPlugin(PluginInterface):
         await self._send_notification(test_notification)
         
         return OperationResult(
-            success=True,
-            data={"notification_sent": True, "channels": [ch for ch, active in self._channels.items() if active]},
-            metadata={"action": "notifier_test"}
+            OperationStatus.SUCCESS,
+            {"notification_sent": True, "channels": [ch for ch, active in self._channels.items() if active], "action": "notifier_test"},
+            0.0
         )
         
     async def cmd_add_filter(self, ip_range: str, **kwargs) -> OperationResult:
         """Add IP range filter"""
+        start_time = time.time()
         try:
             # Validate IP range
             import ipaddress
@@ -234,16 +249,17 @@ class SessionNotifierPlugin(PluginInterface):
             self._ip_filters.add(ip_range)
             
             return OperationResult(
-                success=True,
-                data={"filter_added": ip_range, "total_filters": len(self._ip_filters)},
-                metadata={"action": "notifier_add_filter"}
+                OperationStatus.SUCCESS,
+                {"filter_added": ip_range, "total_filters": len(self._ip_filters), "action": "notifier_add_filter"},
+                time.time() - start_time
             )
             
         except ValueError as e:
             return OperationResult(
-                success=False,
-                data=None,
-                error=f"Invalid IP range: {str(e)}"
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                f"Invalid IP range: {str(e)}"
             )
             
     async def cmd_history(self, limit: int = 10, **kwargs) -> OperationResult:
@@ -251,12 +267,14 @@ class SessionNotifierPlugin(PluginInterface):
         history = self._notification_history[-limit:]
         
         return OperationResult(
-            success=True,
-            data={
+            OperationStatus.SUCCESS,
+            {
                 "history": history,
-                "total_notifications": len(self._notification_history)
+                "total_notifications": len(self._notification_history),
+                "action": "notifier_history", 
+                "limit": limit
             },
-            metadata={"action": "notifier_history", "limit": limit}
+            0.0
         )
         
     async def _on_session_opened(self, data: Dict[str, Any]) -> None:

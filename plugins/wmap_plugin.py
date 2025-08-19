@@ -5,10 +5,12 @@ Provides web application mapping and vulnerability scanning
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext, OperationResult
+from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext
+from msf_stable_integration import OperationResult, OperationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -52,126 +54,138 @@ class WMAPPlugin(PluginInterface):
         
     async def initialize(self) -> OperationResult:
         """Initialize WMAP plugin"""
+        start_time = time.time()
         try:
             # Load WMAP in MSF
             result = await self.msf.execute_command("load wmap")
             
-            if "loaded" in result.output.lower():
+            if result.status == OperationStatus.SUCCESS and "loaded" in result.data.get("stdout", "").lower():
                 self._initialized = True
                 
                 # Get available WMAP modules
                 await self._refresh_modules()
                 
                 return OperationResult(
-                    success=True,
-                    data={"status": "initialized", "modules": len(self._available_modules)},
-                    metadata={"plugin": "wmap"}
+                    OperationStatus.SUCCESS,
+                    {"status": "initialized", "modules": len(self._available_modules), "plugin": "wmap"},
+                    time.time() - start_time
                 )
             else:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Failed to load WMAP plugin in MSF",
-                    metadata={"output": result.output}
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Failed to load WMAP plugin in MSF"
                 )
                 
         except Exception as e:
             logger.error(f"Failed to initialize WMAP: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def cleanup(self) -> OperationResult:
         """Cleanup WMAP plugin"""
+        start_time = time.time()
         try:
             # Unload from MSF
             await self.msf.execute_command("unload wmap")
             
             return OperationResult(
-                success=True,
-                data={"status": "cleaned_up"},
-                metadata={"plugin": "wmap"}
+                OperationStatus.SUCCESS,
+                {"status": "cleaned_up", "plugin": "wmap"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to cleanup WMAP: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def cmd_enable(self, **kwargs) -> OperationResult:
         """Enable WMAP scanner"""
         self._enabled = True
         return OperationResult(
-            success=True,
-            data={"enabled": True},
-            metadata={"action": "wmap_enable"}
+            OperationStatus.SUCCESS,
+            {"enabled": True, "action": "wmap_enable"},
+            0.0
         )
         
     async def cmd_sites(self, action: str = "list", url: Optional[str] = None, **kwargs) -> OperationResult:
         """Manage discovered sites"""
+        start_time = time.time()
         try:
             if action == "list":
                 result = await self.msf.execute_command("wmap_sites -l")
-                sites = self._parse_sites(result.output)
+                stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+                sites = self._parse_sites(stdout)
                 
                 return OperationResult(
-                    success=True,
-                    data={"sites": sites},
-                    metadata={"action": "wmap_sites_list", "count": len(sites)}
+                    OperationStatus.SUCCESS,
+                    {"sites": sites, "action": "wmap_sites_list", "count": len(sites)},
+                    time.time() - start_time
                 )
                 
             elif action == "add" and url:
                 result = await self.msf.execute_command(f"wmap_sites -a {url}")
+                stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
                 
+                success = "Added" in stdout
                 return OperationResult(
-                    success="Added" in result.output,
-                    data={"url": url, "added": True},
-                    output=result.output,
-                    metadata={"action": "wmap_sites_add"}
+                    OperationStatus.SUCCESS if success else OperationStatus.FAILURE,
+                    {"url": url, "added": success, "action": "wmap_sites_add"},
+                    time.time() - start_time
                 )
                 
             else:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Invalid sites action or missing URL"
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Invalid sites action or missing URL"
                 )
                 
         except Exception as e:
             logger.error(f"WMAP sites error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def cmd_targets(self, action: str = "list", index: Optional[int] = None, **kwargs) -> OperationResult:
         """Manage scan targets"""
+        start_time = time.time()
         try:
             if action == "list":
                 result = await self.msf.execute_command("wmap_targets -l")
-                targets = self._parse_targets(result.output)
+                stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+                targets = self._parse_targets(stdout)
                 self._targets = targets
                 
                 return OperationResult(
-                    success=True,
-                    data={"targets": targets},
-                    metadata={"action": "wmap_targets_list", "count": len(targets)}
+                    OperationStatus.SUCCESS,
+                    {"targets": targets, "action": "wmap_targets_list", "count": len(targets)},
+                    time.time() - start_time
                 )
                 
             elif action == "add" and index is not None:
                 result = await self.msf.execute_command(f"wmap_targets -t {index}")
+                stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
                 
+                success = "Added" in stdout
                 return OperationResult(
-                    success="Added" in result.output,
-                    data={"index": index, "added": True},
-                    output=result.output,
-                    metadata={"action": "wmap_targets_add"}
+                    OperationStatus.SUCCESS if success else OperationStatus.FAILURE,
+                    {"index": index, "added": success, "action": "wmap_targets_add"},
+                    time.time() - start_time
                 )
                 
             elif action == "clear":
@@ -179,42 +193,46 @@ class WMAPPlugin(PluginInterface):
                 self._targets.clear()
                 
                 return OperationResult(
-                    success=True,
-                    data={"cleared": True},
-                    output=result.output,
-                    metadata={"action": "wmap_targets_clear"}
+                    OperationStatus.SUCCESS,
+                    {"cleared": True, "action": "wmap_targets_clear"},
+                    time.time() - start_time
                 )
                 
             else:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Invalid targets action"
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Invalid targets action"
                 )
                 
         except Exception as e:
             logger.error(f"WMAP targets error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def cmd_run(self, test_mode: bool = False, modules: Optional[List[str]] = None, **kwargs) -> OperationResult:
         """Run WMAP scan"""
+        start_time = time.time()
         try:
             if not self._enabled:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="WMAP scanner is not enabled"
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "WMAP scanner is not enabled"
                 )
                 
             if not self._targets:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="No targets configured"
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "No targets configured"
                 )
                 
             # Run scan
@@ -227,55 +245,62 @@ class WMAPPlugin(PluginInterface):
                 cmd += " -e"  # Run all enabled modules
                 
             result = await self.msf.execute_command(cmd, timeout=600)  # 10 minute timeout
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
             
             # Parse results
-            vulns = self._parse_scan_results(result.output)
+            vulns = self._parse_scan_results(stdout)
             self._scan_results[datetime.now().isoformat()] = vulns
             
             return OperationResult(
-                success=True,
-                data={
+                OperationStatus.SUCCESS,
+                {
                     "scan_complete": True,
                     "vulnerabilities": len(vulns),
-                    "targets_scanned": len(self._targets)
+                    "targets_scanned": len(self._targets),
+                    "action": "wmap_run",
+                    "test_mode": test_mode
                 },
-                output=result.output,
-                metadata={"action": "wmap_run", "test_mode": test_mode}
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"WMAP run error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def cmd_vulns(self, **kwargs) -> OperationResult:
         """List discovered vulnerabilities"""
+        start_time = time.time()
         try:
             result = await self.msf.execute_command("wmap_vulns -l")
-            vulns = self._parse_vulnerabilities(result.output)
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+            vulns = self._parse_vulnerabilities(stdout)
             
             return OperationResult(
-                success=True,
-                data={"vulnerabilities": vulns},
-                metadata={"action": "wmap_vulns", "count": len(vulns)}
+                OperationStatus.SUCCESS,
+                {"vulnerabilities": vulns, "action": "wmap_vulns", "count": len(vulns)},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"WMAP vulns error: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                0.0,
+                str(e)
             )
             
     async def _refresh_modules(self) -> None:
         """Refresh available WMAP modules"""
         try:
             result = await self.msf.execute_command("wmap_modules -l")
-            self._available_modules = self._parse_modules(result.output)
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+            self._available_modules = self._parse_modules(stdout)
         except Exception as e:
             logger.error(f"Failed to refresh WMAP modules: {e}")
             

@@ -6,9 +6,11 @@ Automatically adds routes for new sessions to enable pivoting
 import asyncio
 import ipaddress
 import logging
+import time
 from typing import Any, Dict, List, Optional, Set
 
-from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext, OperationResult
+from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext
+from msf_stable_integration import OperationResult, OperationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +57,7 @@ class AutoAddRoutePlugin(PluginInterface):
         
     async def initialize(self) -> OperationResult:
         """Initialize auto-route plugin"""
+        start_time = time.time()
         try:
             # Register session event hooks
             self.register_hook("session_opened", self._on_session_opened)
@@ -66,21 +69,23 @@ class AutoAddRoutePlugin(PluginInterface):
             
             self._initialized = True
             return OperationResult(
-                success=True,
-                data={"status": "initialized", "enabled": self._enabled},
-                metadata={"plugin": "auto_add_route"}
+                OperationStatus.SUCCESS,
+                {"status": "initialized", "enabled": self._enabled, "plugin": "auto_add_route"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to initialize auto-route plugin: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cleanup(self) -> OperationResult:
         """Cleanup auto-route plugin resources"""
+        start_time = time.time()
         try:
             # Stop monitoring
             self._monitoring = False
@@ -92,50 +97,52 @@ class AutoAddRoutePlugin(PluginInterface):
                 logger.info(f"Keeping {len(self._auto_routes)} auto-routes active")
                 
             return OperationResult(
-                success=True,
-                data={"status": "cleaned_up", "routes_kept": len(self._auto_routes)},
-                metadata={"plugin": "auto_add_route"}
+                OperationStatus.SUCCESS,
+                {"status": "cleaned_up", "routes_kept": len(self._auto_routes), "plugin": "auto_add_route"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to cleanup auto-route plugin: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_enable(self, **kwargs) -> OperationResult:
         """Enable automatic route addition"""
         self._enabled = True
         return OperationResult(
-            success=True,
-            data={"enabled": True},
-            metadata={"action": "auto_route_enable"}
+            OperationStatus.SUCCESS,
+            {"enabled": True, "action": "auto_route_enable"},
+            0.0
         )
         
     async def cmd_disable(self, **kwargs) -> OperationResult:
         """Disable automatic route addition"""
         self._enabled = False
         return OperationResult(
-            success=True,
-            data={"enabled": False},
-            metadata={"action": "auto_route_disable"}
+            OperationStatus.SUCCESS,
+            {"enabled": False, "action": "auto_route_disable"},
+            0.0
         )
         
     async def cmd_status(self, **kwargs) -> OperationResult:
         """Show auto-route status"""
         return OperationResult(
-            success=True,
-            data={
+            OperationStatus.SUCCESS,
+            {
                 "enabled": self._enabled,
                 "monitoring": self._monitoring,
                 "active_routes": sum(len(routes) for routes in self._auto_routes.values()),
                 "sessions_tracked": len(self._auto_routes),
                 "whitelisted_subnets": list(self._subnet_whitelist),
-                "blacklisted_subnets": list(self._subnet_blacklist)
+                "blacklisted_subnets": list(self._subnet_blacklist),
+                "action": "auto_route_status"
             },
-            metadata={"action": "auto_route_status"}
+            0.0
         )
         
     async def cmd_list_routes(self, **kwargs) -> OperationResult:
@@ -151,33 +158,36 @@ class AutoAddRoutePlugin(PluginInterface):
                 })
                 
         return OperationResult(
-            success=True,
-            data={"routes": routes_info},
-            metadata={"action": "auto_route_list", "count": len(routes_info)}
+            OperationStatus.SUCCESS,
+            {"routes": routes_info, "action": "auto_route_list", "count": len(routes_info)},
+            0.0
         )
         
     async def cmd_add_subnet(self, subnet: str, **kwargs) -> OperationResult:
         """Add subnet to auto-route whitelist"""
+        start_time = time.time()
         try:
             # Validate subnet
             ipaddress.ip_network(subnet)
             self._subnet_whitelist.add(subnet)
             
             return OperationResult(
-                success=True,
-                data={"subnet": subnet, "whitelisted": True},
-                metadata={"action": "auto_route_add_subnet"}
+                OperationStatus.SUCCESS,
+                {"subnet": subnet, "whitelisted": True, "action": "auto_route_add_subnet"},
+                time.time() - start_time
             )
             
         except ValueError as e:
             return OperationResult(
-                success=False,
-                data=None,
-                error=f"Invalid subnet: {str(e)}"
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                f"Invalid subnet: {str(e)}"
             )
             
     async def cmd_clear_routes(self, **kwargs) -> OperationResult:
         """Clear all automatically added routes"""
+        start_time = time.time()
         try:
             cleared = 0
             
@@ -191,17 +201,18 @@ class AutoAddRoutePlugin(PluginInterface):
             self._auto_routes.clear()
             
             return OperationResult(
-                success=True,
-                data={"routes_cleared": cleared},
-                metadata={"action": "auto_route_clear"}
+                OperationStatus.SUCCESS,
+                {"routes_cleared": cleared, "action": "auto_route_clear"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to clear routes: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def _monitor_sessions(self) -> None:
@@ -212,7 +223,8 @@ class AutoAddRoutePlugin(PluginInterface):
             try:
                 # Get current sessions
                 result = await self.msf.execute_command("sessions -l")
-                current_sessions = self._parse_sessions(result.output)
+                stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+                current_sessions = self._parse_sessions(stdout)
                 
                 # Check for new sessions
                 for session_id, session_info in current_sessions.items():
@@ -257,7 +269,8 @@ class AutoAddRoutePlugin(PluginInterface):
         try:
             # Get network interfaces from session
             result = await self.msf.execute_command(f"sessions -i {session_id} -c 'ifconfig'")
-            subnets = self._extract_subnets(result.output)
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+            subnets = self._extract_subnets(stdout)
             
             # Add routes for valid subnets
             added_routes = []
@@ -266,7 +279,7 @@ class AutoAddRoutePlugin(PluginInterface):
                     route_cmd = f"route add {subnet} {session_id}"
                     route_result = await self.msf.execute_command(route_cmd)
                     
-                    if route_result.success:
+                    if route_result.status == OperationStatus.SUCCESS:
                         added_routes.append(subnet)
                         logger.info(f"Added route {subnet} via session {session_id}")
                         

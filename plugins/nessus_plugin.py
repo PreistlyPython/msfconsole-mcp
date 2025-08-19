@@ -6,9 +6,11 @@ Provides comprehensive Nessus vulnerability scanner integration
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Dict, List, Optional
 
-from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext, OperationResult
+from msf_plugin_system import PluginInterface, PluginMetadata, PluginCategory, PluginContext
+from msf_stable_integration import OperationResult, OperationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -55,35 +57,39 @@ class NessusPlugin(PluginInterface):
         
     async def initialize(self) -> OperationResult:
         """Initialize Nessus plugin"""
+        start_time = time.time()
         try:
             # Check if Nessus integration is available in MSF
             result = await self.msf.execute_command("load nessus")
             
-            if "Plugin loaded" in result.output or "already loaded" in result.output:
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+            if "Plugin loaded" in stdout or "already loaded" in stdout:
                 self._initialized = True
                 return OperationResult(
-                    success=True,
-                    data={"status": "initialized"},
-                    metadata={"plugin": "nessus"}
+                    OperationStatus.SUCCESS,
+                    {"status": "initialized", "plugin": "nessus"},
+                    time.time() - start_time
                 )
             else:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Failed to load Nessus plugin in MSF",
-                    metadata={"output": result.output}
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Failed to load Nessus plugin in MSF"
                 )
                 
         except Exception as e:
             logger.error(f"Failed to initialize Nessus plugin: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cleanup(self) -> OperationResult:
         """Cleanup Nessus plugin resources"""
+        start_time = time.time()
         try:
             if self._connected:
                 await self.cmd_disconnect()
@@ -92,57 +98,63 @@ class NessusPlugin(PluginInterface):
             await self.msf.execute_command("unload nessus")
             
             return OperationResult(
-                success=True,
-                data={"status": "cleaned_up"},
-                metadata={"plugin": "nessus"}
+                OperationStatus.SUCCESS,
+                {"status": "cleaned_up", "plugin": "nessus"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to cleanup Nessus plugin: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_connect(self, server: str, username: str, password: str, **kwargs) -> OperationResult:
         """Connect to Nessus server"""
+        start_time = time.time()
         try:
             # Execute Nessus connect command
             cmd = f"nessus_connect {server} {username} {password}"
             result = await self.msf.execute_command(cmd)
             
-            if "Successfully authenticated" in result.output or "Connected" in result.output:
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
+            if "Successfully authenticated" in stdout or "Connected" in stdout:
                 self._connected = True
                 self._server_url = server
                 
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "status": "connected",
                         "server": server,
-                        "user": username
+                        "user": username,
+                        "action": "nessus_connect"
                     },
-                    metadata={"action": "nessus_connect"}
+                    time.time() - start_time
                 )
             else:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Failed to connect to Nessus",
-                    metadata={"output": result.output}
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Failed to connect to Nessus"
                 )
                 
         except Exception as e:
             logger.error(f"Failed to connect to Nessus: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_disconnect(self, **kwargs) -> OperationResult:
         """Disconnect from Nessus server"""
+        start_time = time.time()
         try:
             result = await self.msf.execute_command("nessus_logout")
             
@@ -151,91 +163,103 @@ class NessusPlugin(PluginInterface):
             self._token = None
             
             return OperationResult(
-                success=True,
-                data={"status": "disconnected"},
-                metadata={"action": "nessus_disconnect"}
+                OperationStatus.SUCCESS,
+                {"status": "disconnected", "action": "nessus_disconnect"},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to disconnect from Nessus: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_status(self, **kwargs) -> OperationResult:
         """Check Nessus connection status"""
+        start_time = time.time()
         try:
             if not self._connected:
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "connected": False,
-                        "server": None
+                        "server": None,
+                        "action": "nessus_status"
                     },
-                    metadata={"action": "nessus_status"}
+                    time.time() - start_time
                 )
                 
             # Verify connection with a simple command
             result = await self.msf.execute_command("nessus_server_status")
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
             
             return OperationResult(
-                success=True,
-                data={
+                OperationStatus.SUCCESS,
+                {
                     "connected": True,
                     "server": self._server_url,
-                    "status": result.output
+                    "status": stdout,
+                    "action": "nessus_status"
                 },
-                metadata={"action": "nessus_status"}
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to check Nessus status: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_list_scans(self, **kwargs) -> OperationResult:
         """List all Nessus scans"""
+        start_time = time.time()
         try:
             if not self._connected:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Not connected to Nessus server"
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Not connected to Nessus server"
                 )
                 
             result = await self.msf.execute_command("nessus_scan_list")
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
             
             # Parse scan list from output
-            scans = self._parse_scan_list(result.output)
+            scans = self._parse_scan_list(stdout)
             self._scans = {scan["id"]: scan for scan in scans}
             
             return OperationResult(
-                success=True,
-                data={"scans": scans},
-                metadata={"action": "nessus_list_scans", "count": len(scans)}
+                OperationStatus.SUCCESS,
+                {"scans": scans, "action": "nessus_list_scans", "count": len(scans)},
+                time.time() - start_time
             )
             
         except Exception as e:
             logger.error(f"Failed to list Nessus scans: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_launch_scan(self, policy_id: str, targets: str, name: Optional[str] = None, **kwargs) -> OperationResult:
         """Launch a new Nessus scan"""
+        start_time = time.time()
         try:
             if not self._connected:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Not connected to Nessus server"
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Not connected to Nessus server"
                 )
                 
             # Generate scan name if not provided
@@ -245,84 +269,93 @@ class NessusPlugin(PluginInterface):
                 
             cmd = f"nessus_scan_create {policy_id} {name} {targets}"
             result = await self.msf.execute_command(cmd)
+            stdout = result.data.get("stdout", "") if result.status == OperationStatus.SUCCESS else ""
             
-            if "created" in result.output.lower():
+            if "created" in stdout.lower():
                 # Launch the created scan
-                scan_id = self._extract_scan_id(result.output)
+                scan_id = self._extract_scan_id(stdout)
                 if scan_id:
                     launch_result = await self.msf.execute_command(f"nessus_scan_launch {scan_id}")
                     
                     return OperationResult(
-                        success=True,
-                        data={
+                        OperationStatus.SUCCESS,
+                        {
                             "scan_id": scan_id,
                             "name": name,
                             "targets": targets,
-                            "status": "launched"
+                            "status": "launched",
+                            "action": "nessus_launch_scan"
                         },
-                        metadata={"action": "nessus_launch_scan"}
+                        time.time() - start_time
                     )
                     
             return OperationResult(
-                success=False,
-                data=None,
-                error="Failed to launch scan",
-                metadata={"output": result.output}
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                "Failed to launch scan"
             )
             
         except Exception as e:
             logger.error(f"Failed to launch Nessus scan: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     async def cmd_import_results(self, scan_id: str, **kwargs) -> OperationResult:
         """Import Nessus scan results into MSF database"""
+        start_time = time.time()
         try:
             if not self._connected:
                 return OperationResult(
-                    success=False,
-                    data=None,
-                    error="Not connected to Nessus server"
+                    OperationStatus.FAILURE,
+                    None,
+                    time.time() - start_time,
+                    "Not connected to Nessus server"
                 )
                 
             # Export scan results
             export_cmd = f"nessus_report_download {scan_id} nessus"
             export_result = await self.msf.execute_command(export_cmd)
+            export_stdout = export_result.data.get("stdout", "") if export_result.status == OperationStatus.SUCCESS else ""
             
-            if "downloaded" in export_result.output.lower():
+            if "downloaded" in export_stdout.lower():
                 # Import into MSF database
                 import_cmd = f"db_import_nessus {scan_id}"
                 import_result = await self.msf.execute_command(import_cmd)
+                import_stdout = import_result.data.get("stdout", "") if import_result.status == OperationStatus.SUCCESS else ""
                 
                 # Parse import statistics
-                stats = self._parse_import_stats(import_result.output)
+                stats = self._parse_import_stats(import_stdout)
                 
                 return OperationResult(
-                    success=True,
-                    data={
+                    OperationStatus.SUCCESS,
+                    {
                         "scan_id": scan_id,
                         "imported": True,
-                        "statistics": stats
+                        "statistics": stats,
+                        "action": "nessus_import_results"
                     },
-                    metadata={"action": "nessus_import_results"}
+                    time.time() - start_time
                 )
                 
             return OperationResult(
-                success=False,
-                data=None,
-                error="Failed to import scan results",
-                metadata={"output": export_result.output}
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                "Failed to import scan results"
             )
             
         except Exception as e:
             logger.error(f"Failed to import Nessus results: {e}")
             return OperationResult(
-                success=False,
-                data=None,
-                error=str(e)
+                OperationStatus.FAILURE,
+                None,
+                time.time() - start_time,
+                str(e)
             )
             
     def _parse_scan_list(self, output: str) -> List[Dict[str, Any]]:
