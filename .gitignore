@@ -4,6 +4,9 @@ __pycache__/
 *$py.class
 *.so
 .Python
+env/
+venv/
+ENV/
 build/
 develop-eggs/
 dist/
@@ -16,97 +19,58 @@ parts/
 sdist/
 var/
 wheels/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
-# Logs and databases
-*.log
-*.sqlite
-*.db
-
-# Environment
-.env
-.venv
-env/
+# Virtual Environment
 venv/
+env/
 ENV/
-env.bak/
-venv.bak/
 
-# Editor directories and files
-.idea
-.vscode
+# IDE
+.vscode/
+.idea/
 *.swp
 *.swo
 *~
 
-# Backup files
-*.bak
-*.bak[0-9]*
+# Attack Scripts and Results (sensitive)
+*.rc
+*.xml
+garey_*
+unifi_*
+pivot_*
+*_attack*
+*_target*
+*_stealth*
+*_recon*
+*_discovery*
 
-# Mac
-.DS_Store
+# Test files
+test_*.py
+simple_*.py
 
-# Configuration files containing sensitive information
-config_local.py
-
-# Claude Code specific files (not for public)
-CLAUDE.md
-.claude/
-*.claude
-
-# Development and debug files
-debug_*.py
-fix_*.py
-test_*_fix.py
-measure_*.py
-*_backup.py
-*_backup_*
-*_test.py
-
-# Internal documentation and brainstorming
-Knowledge/
-Instructions/
-HIGH_LEVERAGE_TOOLS_BRAINSTORM.md
-MSF_MCP_*_ANALYSIS.md
-MSF_MCP_*_TODO.md
-MSF_MCP_*_REPORT.md
-
-# Temporary artifacts
-*_results.json
-*_output.py
-tmp_*
-
-# MSF Report files
-msf_report_*.json
-msf_report_*.html
-msf_report_*.pdf
-msf_report_*.xml
-msf_report_*.csv
-
-# Testing and status reports (exclude specific ones)
+# Reports and Documentation (sensitive)
+PENETRATION_TEST_REPORT.md
 *_REPORT.md
-*_STATUS.md
-COMPREHENSIVE_*.md
-FINAL_*.md
+*_ROADMAP*.md
+*_ANALYSIS*.md
 
-# Keep important analysis reports
-!MSF_FEATURE_GAP_ANALYSIS_REPORT.md
+# Temporary and backup files
+*.bak
+*.tmp
+*.log
+*.cache
 
-# Broken or backup files
-*_broken.py
-*_backup.py
-*_old.py
+# MCP development files (not needed for production)
+mcp_server_complete.py
+mcp_server_fixed.py
+mcp_server_best_practices.py
+msf_final_five_tools.py
+msf_ecosystem_tools.py
+improved_msf_parser.py
+msfconsole_mcp_enhanced.py
 
-# Personal information
-~/
-
-# Test files (keep only essential ones)
-test_complete_*.py
-test_ecosystem_*.py
-test_environment_*.py
-test_imports_*.py
-test_new_*.py
+# Configuration (keep only essential)
+.mcp.json
